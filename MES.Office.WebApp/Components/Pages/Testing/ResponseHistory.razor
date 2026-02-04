@@ -1,0 +1,464 @@
+@* ResponseHistory.razor - Session-based history of API test requests/responses *@
+
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="2" Class="pa-3" Style="height: 100%; display: flex; flex-direction: column;">
+    @* Header *@
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+        <MudText Typo="Typo.subtitle1">
+            <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Small" Class="mr-1" />
+            Request History
+            @if (History?.Any() == true)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">@History.Count</MudChip>
+            }
+        </MudText>
+        <MudStack Row="true" Spacing="1">
+            @if (History?.Any() == true)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep"
+                               Size="Size.Small"
+                               Color="Color.Error"
+                               OnClick="HandleClearHistory"
+                               Title="Clear all history" />
+            }
+        </MudStack>
+    </MudStack>
+
+    @* Filters *@
+    @if (History?.Any() == true)
+    {
+        <MudStack Row="true" Spacing="2" Class="mb-2" AlignItems="AlignItems.Center">
+            @* Method Filter *@
+            <MudSelect T="string"
+                       @bind-Value="_methodFilter"
+                       Label="Method"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       Margin="Margin.Dense"
+                       Style="min-width: 100px;"
+                       Clearable="true">
+                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@("GET")">GET</MudSelectItem>
+                <MudSelectItem T="string" Value="@("POST")">POST</MudSelectItem>
+                <MudSelectItem T="string" Value="@("PUT")">PUT</MudSelectItem>
+                <MudSelectItem T="string" Value="@("PATCH")">PATCH</MudSelectItem>
+                <MudSelectItem T="string" Value="@("DELETE")">DELETE</MudSelectItem>
+            </MudSelect>
+
+            @* Status Filter *@
+            <MudSelect T="string"
+                       @bind-Value="_statusFilter"
+                       Label="Status"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       Margin="Margin.Dense"
+                       Style="min-width: 100px;"
+                       Clearable="true">
+                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@("success")">Success</MudSelectItem>
+                <MudSelectItem T="string" Value="@("error")">Error</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+    }
+
+    @* History List *@
+    <div style="flex: 1; overflow-y: auto; max-height: calc(100vh - 400px);">
+        @if (FilteredHistory?.Any() == true)
+        {
+            <MudList T="HistoryEntry" Dense="true" Class="py-0">
+                @foreach (var (entry, index) in FilteredHistory.Select((e, i) => (e, i)))
+                {
+                    var isEven = index % 2 == 0;
+                    <MudListItem T="HistoryEntry"
+                                 Class="@GetListItemClass(entry, isEven)"
+                                 OnClick="@(() => HandleSelectEntry(entry))">
+                        <MudStack Spacing="1">
+                            @* Main Row *@
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Style="flex: 1; min-width: 0;">
+                                    @* Timestamp *@
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="white-space: nowrap;">
+                                        @entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")
+                                    </MudText>
+
+                                    @* Method Badge *@
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="@GetMethodColor(entry.Endpoint?.Method?.Method ?? "GET")"
+                                             Variant="Variant.Filled"
+                                             Class="method-chip-compact">
+                                        @((entry.Endpoint?.Method?.Method ?? "GET").ToUpper())
+                                    </MudChip>
+
+                                    @* Endpoint Path (truncated) *@
+                                    <MudTooltip Text="@(entry.Endpoint?.Path ?? entry.Result?.EndpointUrl ?? "")" Placement="Placement.Top">
+                                        <MudText Typo="Typo.body2" Style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;">
+                                            <code>@TruncatePath(entry.Endpoint?.Path ?? entry.Result?.EndpointUrl ?? "", 30)</code>
+                                        </MudText>
+                                    </MudTooltip>
+                                </MudStack>
+
+                                @* Status and Response Time *@
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    @if (entry.Result != null)
+                                    {
+                                        <MudChip T="string"
+                                                 Size="Size.Small"
+                                                 Color="@GetStatusCodeColor((int)entry.Result.StatusCode)"
+                                                 Variant="Variant.Filled"
+                                                 Class="status-chip-compact">
+                                            @((int)entry.Result.StatusCode)
+                                        </MudChip>
+
+                                        <MudText Typo="Typo.caption" Color="@GetResponseTimeColor(entry.Result.ResponseTimeMs)">
+                                            @entry.Result.ResponseTimeMs ms
+                                        </MudText>
+                                    }
+
+                                    @* Action Buttons *@
+                                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                                   Size="Size.Small"
+                                                   OnClick="@(async () => await CopyResponseAsync(entry))"
+                                                   OnClick:stopPropagation="true"
+                                                   Title="Copy response" />
+
+                                    <MudIconButton Icon="@(_expandedEntries.Contains(entry.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => ToggleExpand(entry.Id))"
+                                                   OnClick:stopPropagation="true"
+                                                   Title="@(_expandedEntries.Contains(entry.Id) ? "Collapse" : "Expand")" />
+                                </MudStack>
+                            </MudStack>
+
+                            @* Expanded Details *@
+                            @if (_expandedEntries.Contains(entry.Id) && entry.Result != null)
+                            {
+                                <MudDivider Class="my-1" />
+                                <MudPaper Elevation="0" Class="pa-2 response-preview" Style="background-color: var(--mud-palette-background-grey); border-radius: 4px;">
+                                    @if (!string.IsNullOrEmpty(entry.Result.ResponseContent))
+                                    {
+                                        <pre class="json-preview">@FormatJsonPreview(entry.Result.ResponseContent, 10)</pre>
+                                    }
+                                    else if (!string.IsNullOrEmpty(entry.Result.ErrorMessage))
+                                    {
+                                        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-0">
+                                            @entry.Result.ErrorMessage
+                                        </MudAlert>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">No response body</MudText>
+                                    }
+                                </MudPaper>
+                            }
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+        else if (History?.Any() != true)
+        {
+            <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-4" Style="height: 200px;">
+                <MudIcon Icon="@Icons.Material.Filled.HistoryToggleOff" Size="Size.Large" Class="mud-text-secondary" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary" Align="Align.Center">
+                    No request history yet.<br/>
+                    Execute API tests to see them here.
+                </MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-4">
+                <MudIcon Icon="@Icons.Material.Filled.FilterAlt" Size="Size.Medium" Class="mud-text-secondary" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary" Align="Align.Center">
+                    No entries match the current filters.
+                </MudText>
+            </MudStack>
+        }
+    </div>
+</MudPaper>
+
+<style>
+    .method-chip-compact {
+        min-width: 50px;
+        max-height: 22px;
+        font-size: 0.7rem;
+        justify-content: center;
+    }
+
+    .status-chip-compact {
+        min-width: 40px;
+        max-height: 22px;
+        font-size: 0.7rem;
+        justify-content: center;
+    }
+
+    .history-item-even {
+        background-color: transparent;
+    }
+
+    .history-item-odd {
+        background-color: var(--mud-palette-background-grey);
+    }
+
+    .history-item-selected {
+        background-color: var(--mud-palette-action-default-hover) !important;
+        border-left: 3px solid var(--mud-palette-primary);
+    }
+
+    .response-preview {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .json-preview {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 0;
+        line-height: 1.4;
+        color: var(--mud-palette-text-primary);
+    }
+</style>
+
+@code {
+    /// <summary>
+    /// List of history entries to display
+    /// </summary>
+    [Parameter]
+    public List<HistoryEntry> History { get; set; } = new();
+
+    /// <summary>
+    /// Callback when a history entry is selected (to reload into test panel)
+    /// </summary>
+    [Parameter]
+    public EventCallback<HistoryEntry> OnSelectEntry { get; set; }
+
+    /// <summary>
+    /// Callback when clear history is clicked
+    /// </summary>
+    [Parameter]
+    public EventCallback OnClearHistory { get; set; }
+
+    /// <summary>
+    /// Maximum number of entries to keep (auto-evicts oldest)
+    /// </summary>
+    [Parameter]
+    public int MaxEntries { get; set; } = 50;
+
+    // Filter state
+    private string _methodFilter = "";
+    private string _statusFilter = "";
+
+    // Expanded entries tracking
+    private HashSet<string> _expandedEntries = new();
+
+    // Selected entry tracking
+    private string? _selectedEntryId;
+
+    /// <summary>
+    /// Gets the filtered history based on current filter selections
+    /// </summary>
+    private List<HistoryEntry> FilteredHistory
+    {
+        get
+        {
+            if (History == null) return new List<HistoryEntry>();
+
+            var filtered = History.AsEnumerable();
+
+            // Apply method filter
+            if (!string.IsNullOrEmpty(_methodFilter))
+            {
+                filtered = filtered.Where(e =>
+                    e.Endpoint?.Method?.Method?.Equals(_methodFilter, StringComparison.OrdinalIgnoreCase) == true ||
+                    e.Result?.HttpMethod?.Equals(_methodFilter, StringComparison.OrdinalIgnoreCase) == true);
+            }
+
+            // Apply status filter
+            if (!string.IsNullOrEmpty(_statusFilter))
+            {
+                if (_statusFilter == "success")
+                {
+                    filtered = filtered.Where(e => e.Result?.Success == true);
+                }
+                else if (_statusFilter == "error")
+                {
+                    filtered = filtered.Where(e => e.Result?.Success != true);
+                }
+            }
+
+            // Order by newest first
+            return filtered.OrderByDescending(e => e.Timestamp).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Handles selecting an entry to reload into the test panel
+    /// </summary>
+    private async Task HandleSelectEntry(HistoryEntry entry)
+    {
+        _selectedEntryId = entry.Id;
+        await OnSelectEntry.InvokeAsync(entry);
+    }
+
+    /// <summary>
+    /// Handles clearing all history
+    /// </summary>
+    private async Task HandleClearHistory()
+    {
+        _expandedEntries.Clear();
+        _selectedEntryId = null;
+        await OnClearHistory.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Toggles the expanded state of a history entry
+    /// </summary>
+    private void ToggleExpand(string entryId)
+    {
+        if (_expandedEntries.Contains(entryId))
+        {
+            _expandedEntries.Remove(entryId);
+        }
+        else
+        {
+            _expandedEntries.Add(entryId);
+        }
+    }
+
+    /// <summary>
+    /// Copies the response content to clipboard
+    /// </summary>
+    private async Task CopyResponseAsync(HistoryEntry entry)
+    {
+        if (entry.Result?.ResponseContent != null)
+        {
+            try
+            {
+                var formattedJson = FormatJson(entry.Result.ResponseContent);
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", formattedJson);
+                Snackbar.Add("Response copied to clipboard", Severity.Success);
+            }
+            catch (Exception)
+            {
+                Snackbar.Add("Failed to copy to clipboard", Severity.Warning);
+            }
+        }
+        else
+        {
+            Snackbar.Add("No response content to copy", Severity.Info);
+        }
+    }
+
+    /// <summary>
+    /// Gets the CSS class for a list item
+    /// </summary>
+    private string GetListItemClass(HistoryEntry entry, bool isEven)
+    {
+        var baseClass = isEven ? "history-item-even" : "history-item-odd";
+        if (_selectedEntryId == entry.Id)
+        {
+            return $"{baseClass} history-item-selected";
+        }
+        return baseClass;
+    }
+
+    /// <summary>
+    /// Gets the color for an HTTP method badge
+    /// </summary>
+    private static Color GetMethodColor(string method) => method.ToUpper() switch
+    {
+        "GET" => Color.Success,
+        "POST" => Color.Primary,
+        "PUT" => Color.Warning,
+        "PATCH" => Color.Info,
+        "DELETE" => Color.Error,
+        _ => Color.Default
+    };
+
+    /// <summary>
+    /// Gets the color for a status code chip
+    /// </summary>
+    private static Color GetStatusCodeColor(int statusCode)
+    {
+        if (statusCode >= 200 && statusCode < 300) return Color.Success;
+        if (statusCode >= 300 && statusCode < 400) return Color.Warning;
+        if (statusCode >= 400) return Color.Error;
+        return Color.Default;
+    }
+
+    /// <summary>
+    /// Gets the color for response time display
+    /// </summary>
+    private static Color GetResponseTimeColor(long responseTimeMs)
+    {
+        if (responseTimeMs < 500) return Color.Success;
+        if (responseTimeMs < 2000) return Color.Warning;
+        return Color.Error;
+    }
+
+    /// <summary>
+    /// Truncates a path for display
+    /// </summary>
+    private static string TruncatePath(string path, int maxLength)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        if (path.Length <= maxLength) return path;
+
+        // Try to keep the end of the path visible
+        return "..." + path.Substring(path.Length - maxLength + 3);
+    }
+
+    /// <summary>
+    /// Formats JSON with indentation
+    /// </summary>
+    private static string FormatJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return json;
+
+        try
+        {
+            var parsed = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(parsed.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    /// <summary>
+    /// Formats JSON for preview with line limit
+    /// </summary>
+    private static string FormatJsonPreview(string json, int maxLines)
+    {
+        var formatted = FormatJson(json);
+        var lines = formatted.Split('\n');
+
+        if (lines.Length <= maxLines)
+        {
+            return formatted;
+        }
+
+        var preview = string.Join('\n', lines.Take(maxLines));
+        return preview + $"\n... ({lines.Length - maxLines} more lines)";
+    }
+
+    /// <summary>
+    /// History entry model
+    /// </summary>
+    public class HistoryEntry
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public EndpointInfo Endpoint { get; set; } = null!;
+        public EndpointTestResult Result { get; set; } = null!;
+        public string? RequestBody { get; set; }
+        public Dictionary<string, string>? RequestHeaders { get; set; }
+    }
+}

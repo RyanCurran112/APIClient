@@ -1,0 +1,625 @@
+@using MES.Office.Application.Interfaces.Services
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Testing
+@using System.Text.Json
+
+@inject IEndpointTesting_Service EndpointTestingService
+@inject ILogger<BatchTestResults> Logger
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="2" Class="pa-4">
+    @* Header with Summary Stats *@
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Science" Class="mr-2" />
+            Batch Test Results
+        </MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Download"
+                       OnClick="ExportToJsonAsync"
+                       Disabled="@(Results == null || !Results.Any())">
+                Export JSON
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RetryFailedTestsAsync"
+                       Disabled="@(IsLoading || !HasFailedTests)">
+                Retry Failed
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @* Progress Bar *@
+    @if (IsLoading)
+    {
+        <MudProgressLinear Color="Color.Primary" Value="@Progress" Class="mb-4" />
+        <MudText Typo="Typo.caption" Align="Align.Center" Class="mb-4 mud-text-secondary">
+            Running tests... @Progress.ToString("F0")% complete
+        </MudText>
+    }
+
+    @* Summary Statistics *@
+    @if (Results?.Any() == true)
+    {
+        <MudGrid Class="mb-4" Spacing="2">
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center">
+                    <MudIcon Icon="@Icons.Material.Filled.ListAlt" Color="Color.Primary" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5">@TotalTests</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Total Tests</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetStatCardStyle("success")">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Style="color: #28BD98;" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5" Style="color: #28BD98;">@PassedTests</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Passed</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetStatCardStyle("error")">
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Style="color: #EF5350;" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5" Style="color: #EF5350;">@FailedTests</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Failed</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetStatCardStyle("warning")">
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Style="color: #F59E0B;" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5" Style="color: #F59E0B;">@WarningTests</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Warnings</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center">
+                    <MudIcon Icon="@Icons.Material.Filled.Timer" Color="Color.Info" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5">@AverageResponseTime.ToString("F0")</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Avg Time (ms)</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" sm="4" md="2">
+                <MudPaper Elevation="1" Class="pa-3 text-center">
+                    <MudIcon Icon="@Icons.Material.Filled.Percent" Color="Color.Primary" Size="Size.Medium" Class="mb-1" />
+                    <MudText Typo="Typo.h5">@SuccessRate.ToString("F0")%</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Success Rate</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @* Filters *@
+    <MudGrid Class="mb-4" Spacing="2">
+        <MudItem xs="12" sm="6" md="4">
+            <MudTextField @bind-Value="_searchText"
+                          Placeholder="Search endpoints..."
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Dense="true"
+                          Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="FilterStatus" @bind-Value="_filterStatus"
+                       Label="Filter by Status"
+                       Variant="Variant.Outlined"
+                       Dense="true">
+                <MudSelectItem T="FilterStatus" Value="FilterStatus.All">All</MudSelectItem>
+                <MudSelectItem T="FilterStatus" Value="FilterStatus.Success">Success (2xx)</MudSelectItem>
+                <MudSelectItem T="FilterStatus" Value="FilterStatus.Warning">Warning (3xx)</MudSelectItem>
+                <MudSelectItem T="FilterStatus" Value="FilterStatus.Failed">Failed (4xx/5xx)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    @* Data Grid *@
+    @if (Results?.Any() == true)
+    {
+        <MudDataGrid T="EndpointTestResult"
+                     Items="@FilteredResults"
+                     Filterable="false"
+                     Dense="true"
+                     Hover="true"
+                     Striped="true"
+                     Bordered="true"
+                     RowClick="@OnRowClicked"
+                     RowClass="GetRowClass"
+                     Class="batch-results-grid">
+            <Columns>
+                @* Expand/Collapse Button *@
+                <TemplateColumn T="EndpointTestResult" CellClass="expand-cell" HeaderClass="expand-header">
+                    <CellTemplate>
+                        <MudIconButton Icon="@(IsRowExpanded(context.Item) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                       Size="Size.Small"
+                                       OnClick="@(() => ToggleRowExpansion(context.Item))"
+                                       Title="@(IsRowExpanded(context.Item) ? "Collapse" : "Expand")" />
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Endpoint Column *@
+                <TemplateColumn T="EndpointTestResult" Title="Endpoint" Sortable="true" SortBy="@(x => x.EndpointUrl)">
+                    <CellTemplate>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@GetMethodColor(context.Item.HttpMethod)"
+                                     Variant="Variant.Filled"
+                                     Class="method-chip">
+                                @context.Item.HttpMethod
+                            </MudChip>
+                            <MudText Typo="Typo.body2" Style="font-family: 'Consolas', 'Monaco', monospace;">
+                                @TruncateText(context.Item.EndpointUrl, 60)
+                            </MudText>
+                        </MudStack>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Status Code Column *@
+                <TemplateColumn T="EndpointTestResult" Title="Status" Sortable="true" SortBy="@(x => (int)x.StatusCode)">
+                    <CellTemplate>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@GetStatusCodeColor((int)context.Item.StatusCode)"
+                                 Variant="Variant.Filled">
+                            @((int)context.Item.StatusCode) @context.Item.StatusCode.ToString()
+                        </MudChip>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Response Time Column *@
+                <TemplateColumn T="EndpointTestResult" Title="Time (ms)" Sortable="true" SortBy="@(x => x.ResponseTimeMs)">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Style="@GetResponseTimeStyle(context.Item.ResponseTimeMs)">
+                            <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Class="mr-1" />
+                            @context.Item.ResponseTimeMs
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Size Column *@
+                <TemplateColumn T="EndpointTestResult" Title="Size" Sortable="true" SortBy="@(x => x.ResponseSizeBytes)">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Class="mr-1" />
+                            @FormatBytes(context.Item.ResponseSizeBytes)
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+
+                @* Result Column *@
+                <TemplateColumn T="EndpointTestResult" Title="Result" Sortable="true" SortBy="@(x => x.Success)">
+                    <CellTemplate>
+                        @if (context.Item.Success)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Class="mr-1" />
+                                Success
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" Class="mr-1" />
+                                Failed
+                            </MudChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+
+            <ChildRowContent>
+                @if (IsRowExpanded(context.Item))
+                {
+                    <MudTr>
+                        <td colspan="6" class="pa-0">
+                            <MudPaper Elevation="0" Class="pa-4" Style="background-color: var(--mud-palette-background-grey);">
+                                <MudGrid Spacing="3">
+                                    @* Request Details *@
+                                    <MudItem xs="12" md="6">
+                                        <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" Class="mr-1" />
+                                            Request Details
+                                        </MudText>
+                                        <MudSimpleTable Dense="true" Bordered="true" Class="mb-3">
+                                            <tbody>
+                                                <tr>
+                                                    <td><strong>Endpoint</strong></td>
+                                                    <td><code>@context.Item.EndpointUrl</code></td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Method</strong></td>
+                                                    <td>@context.Item.HttpMethod</td>
+                                                </tr>
+                                                <tr>
+                                                    <td><strong>Tested At</strong></td>
+                                                    <td>@context.Item.TestedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")</td>
+                                                </tr>
+                                            </tbody>
+                                        </MudSimpleTable>
+
+                                        @if (!string.IsNullOrEmpty(context.Item.RequestBody))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="mb-1">Request Body</MudText>
+                                            <MudPaper Elevation="0" Class="pa-2" Style="background-color: var(--mud-palette-surface); max-height: 150px; overflow-y: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                                                <pre class="json-syntax">@FormatJson(context.Item.RequestBody)</pre>
+                                            </MudPaper>
+                                        }
+                                    </MudItem>
+
+                                    @* Response Details *@
+                                    <MudItem xs="12" md="6">
+                                        <MudText Typo="Typo.subtitle2" Class="mb-2">
+                                            <MudIcon Icon="@Icons.Material.Filled.CallReceived" Size="Size.Small" Class="mr-1" />
+                                            Response Details
+                                        </MudText>
+
+                                        @* Error Message if present *@
+                                        @if (!string.IsNullOrEmpty(context.Item.ErrorMessage))
+                                        {
+                                            <MudAlert Severity="Severity.Error" Class="mb-2" Variant="Variant.Outlined" Dense="true">
+                                                <MudText Typo="Typo.body2">@context.Item.ErrorMessage</MudText>
+                                            </MudAlert>
+                                        }
+
+                                        @* Response Headers *@
+                                        @if (context.Item.Context?.TryGetValue("ResponseHeaders", out var headersObj) == true
+                                             && headersObj is Dictionary<string, object> headers && headers.Any())
+                                        {
+                                            <MudExpansionPanel Text="Response Headers" Dense="true" Class="mb-2">
+                                                <MudSimpleTable Dense="true" Bordered="true">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Header</th>
+                                                            <th>Value</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var header in headers)
+                                                        {
+                                                            <tr>
+                                                                <td><code>@header.Key</code></td>
+                                                                <td style="word-break: break-all;">@header.Value</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </MudSimpleTable>
+                                            </MudExpansionPanel>
+                                        }
+
+                                        @* Response Body *@
+                                        @if (!string.IsNullOrEmpty(context.Item.ResponseContent))
+                                        {
+                                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-1">
+                                                <MudText Typo="Typo.caption">Response Body</MudText>
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           StartIcon="@Icons.Material.Filled.ContentCopy"
+                                                           OnClick="@(() => CopyToClipboardAsync(context.Item.ResponseContent))">
+                                                    Copy
+                                                </MudButton>
+                                            </MudStack>
+                                            <MudPaper Elevation="0" Class="pa-2" Style="background-color: var(--mud-palette-surface); max-height: 200px; overflow-y: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                                                <pre class="json-syntax">@FormatJson(context.Item.ResponseContent)</pre>
+                                            </MudPaper>
+                                        }
+                                    </MudItem>
+                                </MudGrid>
+                            </MudPaper>
+                        </td>
+                    </MudTr>
+                }
+            </ChildRowContent>
+
+            <NoRecordsContent>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    No test results match the current filter.
+                </MudAlert>
+            </NoRecordsContent>
+        </MudDataGrid>
+    }
+    else if (!IsLoading)
+    {
+        <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Info" Variant="Variant.Outlined">
+            <MudText Typo="Typo.body2">
+                No batch test results available. Run a batch test to see results here.
+            </MudText>
+        </MudAlert>
+    }
+</MudPaper>
+
+<style>
+    .batch-results-grid .mud-table-row {
+        cursor: pointer;
+    }
+
+    .method-chip {
+        min-width: 60px;
+        justify-content: center;
+        font-weight: 600;
+    }
+
+    .expand-cell {
+        width: 50px;
+        text-align: center;
+    }
+
+    .expand-header {
+        width: 50px;
+    }
+
+    .json-syntax {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 0;
+        font-size: 0.75rem;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        line-height: 1.4;
+    }
+
+    pre {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    }
+</style>
+
+@code {
+    [Parameter] public List<EndpointTestResult>? Results { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public double Progress { get; set; }
+    [Parameter] public EventCallback<List<EndpointInfo>> OnRetryFailed { get; set; }
+
+    private string _searchText = string.Empty;
+    private FilterStatus _filterStatus = FilterStatus.All;
+    private HashSet<string> _expandedRows = new();
+
+    private enum FilterStatus
+    {
+        All,
+        Success,
+        Warning,
+        Failed
+    }
+
+    // Computed properties for summary stats
+    private int TotalTests => Results?.Count ?? 0;
+    private int PassedTests => Results?.Count(r => r.Success && (int)r.StatusCode >= 200 && (int)r.StatusCode < 300) ?? 0;
+    private int FailedTests => Results?.Count(r => !r.Success || (int)r.StatusCode >= 400) ?? 0;
+    private int WarningTests => Results?.Count(r => (int)r.StatusCode >= 300 && (int)r.StatusCode < 400) ?? 0;
+    private double AverageResponseTime => Results?.Any() == true ? Results.Average(r => r.ResponseTimeMs) : 0;
+    private double SuccessRate => TotalTests > 0 ? (double)PassedTests / TotalTests * 100 : 0;
+    private bool HasFailedTests => Results?.Any(r => !r.Success || (int)r.StatusCode >= 400) == true;
+
+    private IEnumerable<EndpointTestResult> FilteredResults
+    {
+        get
+        {
+            if (Results == null) return Enumerable.Empty<EndpointTestResult>();
+
+            var filtered = Results.AsEnumerable();
+
+            // Apply search filter
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var search = _searchText.ToLower();
+                filtered = filtered.Where(r =>
+                    (r.EndpointUrl?.ToLower().Contains(search) ?? false) ||
+                    (r.EndpointName?.ToLower().Contains(search) ?? false) ||
+                    (r.HttpMethod?.ToLower().Contains(search) ?? false));
+            }
+
+            // Apply status filter
+            filtered = _filterStatus switch
+            {
+                FilterStatus.Success => filtered.Where(r => r.Success && (int)r.StatusCode >= 200 && (int)r.StatusCode < 300),
+                FilterStatus.Warning => filtered.Where(r => (int)r.StatusCode >= 300 && (int)r.StatusCode < 400),
+                FilterStatus.Failed => filtered.Where(r => !r.Success || (int)r.StatusCode >= 400),
+                _ => filtered
+            };
+
+            return filtered.OrderBy(r => r.Success).ThenBy(r => r.EndpointUrl);
+        }
+    }
+
+    private async Task ExportToJsonAsync()
+    {
+        if (Results == null || !Results.Any()) return;
+
+        try
+        {
+            var exportData = new
+            {
+                ExportedAt = DateTime.UtcNow,
+                Summary = new
+                {
+                    TotalTests,
+                    PassedTests,
+                    FailedTests,
+                    WarningTests,
+                    AverageResponseTime,
+                    SuccessRate
+                },
+                Results = Results.Select(r => new
+                {
+                    r.EndpointUrl,
+                    r.HttpMethod,
+                    StatusCode = (int)r.StatusCode,
+                    StatusCodeName = r.StatusCode.ToString(),
+                    r.ResponseTimeMs,
+                    r.ResponseSizeBytes,
+                    r.Success,
+                    r.ErrorMessage,
+                    r.TestedAt
+                })
+            };
+
+            var json = JsonSerializer.Serialize(exportData, new JsonSerializerOptions { WriteIndented = true });
+            var fileName = $"batch-test-results-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+
+            // Use JavaScript to download the file
+            await JSRuntime.InvokeVoidAsync("eval", $@"
+                const blob = new Blob([{JsonSerializer.Serialize(json)}], {{ type: 'application/json' }});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = '{fileName}';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            ");
+
+            Snackbar.Add($"Exported {Results.Count} test results to {fileName}", Severity.Success);
+            Logger.LogInformation("Exported batch test results to {FileName}", fileName);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to export test results");
+            Snackbar.Add("Failed to export test results", Severity.Error);
+        }
+    }
+
+    private async Task RetryFailedTestsAsync()
+    {
+        if (Results == null || !HasFailedTests) return;
+
+        var failedEndpoints = Results
+            .Where(r => !r.Success || (int)r.StatusCode >= 400)
+            .Select(r => new EndpointInfo
+            {
+                Id = r.EndpointId,
+                Name = r.EndpointName,
+                Url = r.EndpointUrl,
+                Path = r.EndpointUrl,
+                Method = r.HttpMethod?.ToUpper() switch
+                {
+                    "POST" => HttpMethod.Post,
+                    "PUT" => HttpMethod.Put,
+                    "PATCH" => HttpMethod.Patch,
+                    "DELETE" => HttpMethod.Delete,
+                    _ => HttpMethod.Get
+                }
+            })
+            .ToList();
+
+        if (OnRetryFailed.HasDelegate)
+        {
+            await OnRetryFailed.InvokeAsync(failedEndpoints);
+        }
+    }
+
+    private void OnRowClicked(DataGridRowClickEventArgs<EndpointTestResult> args)
+    {
+        ToggleRowExpansion(args.Item);
+    }
+
+    private bool IsRowExpanded(EndpointTestResult result)
+    {
+        return _expandedRows.Contains(result.Id);
+    }
+
+    private void ToggleRowExpansion(EndpointTestResult result)
+    {
+        if (_expandedRows.Contains(result.Id))
+        {
+            _expandedRows.Remove(result.Id);
+        }
+        else
+        {
+            _expandedRows.Add(result.Id);
+        }
+    }
+
+    private async Task CopyToClipboardAsync(string content)
+    {
+        try
+        {
+            var formattedJson = FormatJson(content);
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", formattedJson);
+            Snackbar.Add("Copied to clipboard", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to copy to clipboard");
+            Snackbar.Add("Failed to copy to clipboard", Severity.Warning);
+        }
+    }
+
+    private static Color GetMethodColor(string? method) => method?.ToLower() switch
+    {
+        "get" => Color.Success,
+        "post" => Color.Primary,
+        "put" => Color.Warning,
+        "patch" => Color.Info,
+        "delete" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color GetStatusCodeColor(int statusCode)
+    {
+        if (statusCode >= 200 && statusCode < 300) return Color.Success;
+        if (statusCode >= 300 && statusCode < 400) return Color.Warning;
+        if (statusCode >= 400) return Color.Error;
+        return Color.Default;
+    }
+
+    private static string GetResponseTimeStyle(long responseTimeMs)
+    {
+        if (responseTimeMs < 500) return "color: #28BD98;"; // Success green
+        if (responseTimeMs < 2000) return "color: #F59E0B;"; // Warning amber
+        return "color: #EF5350;"; // Error red
+    }
+
+    private static string GetStatCardStyle(string type) => type switch
+    {
+        "success" => "border-left: 3px solid #28BD98;",
+        "warning" => "border-left: 3px solid #F59E0B;",
+        "error" => "border-left: 3px solid #EF5350;",
+        _ => ""
+    };
+
+    private static string GetRowClass(EndpointTestResult result, int index)
+    {
+        return string.Empty; // Can be used for row styling if needed
+    }
+
+    private static string TruncateText(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        if (text.Length <= maxLength) return text;
+        return text.Substring(0, maxLength) + "...";
+    }
+
+    private static string FormatJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return string.Empty;
+
+        try
+        {
+            var parsed = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(parsed.RootElement,
+                new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 B";
+
+        string[] sizes = new[] { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size = size / 1024;
+        }
+
+        return string.Format("{0:0.##} {1}", size, sizes[order]);
+    }
+}

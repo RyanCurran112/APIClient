@@ -1,0 +1,470 @@
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Seeding
+@using MES.Office.WebAPI.Contracts.Enums
+@inject ISeeding_Service SeedingService
+@inject NavigationManager Navigation
+@inject ILogger<EntitySummaryGrid> Logger
+
+<MudPaper Elevation="2" Class="pa-4">
+    @* Header *@
+    <div class="d-flex justify-space-between align-center mb-3">
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.GridView" Color="Color.Primary" Class="mr-2" />
+            <MudText Typo="Typo.h6">Entity Summary</MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="RefreshDataAsync"
+                   Disabled="@_isLoading">
+            @if (_isLoading)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                <span>Loading...</span>
+            }
+            else
+            {
+                <span>Refresh</span>
+            }
+        </MudButton>
+    </div>
+
+    @* Category Filter Chips *@
+    <MudChipSet T="string"
+                SelectedValue="_selectedCategory"
+                SelectedValueChanged="OnCategoryFilterChanged"
+                SelectionMode="SelectionMode.SingleSelection"
+                Class="mb-3"
+                Variant="Variant.Outlined">
+        <MudChip Value="@("All")"
+                 Color="@(_selectedCategory == "All" ? Color.Primary : Color.Default)"
+                 SelectedColor="Color.Primary"
+                 Size="Size.Small">
+            All (@_allEntities.Count)
+        </MudChip>
+        <MudChip Value="@("Configuration")"
+                 Color="@(_selectedCategory == "Configuration" ? Color.Info : Color.Default)"
+                 SelectedColor="Color.Info"
+                 Size="Size.Small">
+            <MudIcon Icon="@Icons.Material.Filled.Settings" Size="Size.Small" Class="mr-1" />
+            Configuration (@GetCategoryCount("Configuration"))
+        </MudChip>
+        <MudChip Value="@("System")"
+                 Color="@(_selectedCategory == "System" ? Color.Secondary : Color.Default)"
+                 SelectedColor="Color.Secondary"
+                 Size="Size.Small">
+            <MudIcon Icon="@Icons.Material.Filled.Memory" Size="Size.Small" Class="mr-1" />
+            System (@GetCategoryCount("System"))
+        </MudChip>
+        <MudChip Value="@("Objects")"
+                 Color="@(_selectedCategory == "Objects" ? Color.Success : Color.Default)"
+                 SelectedColor="Color.Success"
+                 Size="Size.Small">
+            <MudIcon Icon="@Icons.Material.Filled.Inventory" Size="Size.Small" Class="mr-1" />
+            Objects (@GetCategoryCount("Objects"))
+        </MudChip>
+        <MudChip Value="@("Transactions")"
+                 Color="@(_selectedCategory == "Transactions" ? Color.Warning : Color.Default)"
+                 SelectedColor="Color.Warning"
+                 Size="Size.Small">
+            <MudIcon Icon="@Icons.Material.Filled.Receipt" Size="Size.Small" Class="mr-1" />
+            Transactions (@GetCategoryCount("Transactions"))
+        </MudChip>
+    </MudChipSet>
+
+    @* Search Box *@
+    <MudTextField @bind-Value="_searchString"
+                  Placeholder="Search entities..."
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Immediate="true"
+                  DebounceInterval="300"
+                  Clearable="true"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense"
+                  Class="mb-3" />
+
+    @* Loading Skeleton *@
+    @if (_isLoading && !_allEntities.Any())
+    {
+        <MudStack Spacing="2">
+            @for (int i = 0; i < 5; i++)
+            {
+                <MudSkeleton Animation="Animation.Wave" Height="40px" />
+            }
+        </MudStack>
+    }
+    else
+    {
+        @* Data Grid *@
+        <MudDataGrid T="EntitySummaryItem"
+                     Items="@FilteredEntities"
+                     Dense="true"
+                     Hover="true"
+                     SortMode="SortMode.Single"
+                     Filterable="false"
+                     RowClick="@OnRowClicked"
+                     RowClass="cursor-pointer"
+                     FixedHeader="true"
+                     Height="400px">
+            <Columns>
+                <PropertyColumn Property="x => x.EntityName" Title="Entity Name" Sortable="true">
+                    <CellTemplate>
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@GetCategoryIcon(context.Item.Category)"
+                                     Color="@GetCategoryColor(context.Item.Category)"
+                                     Size="Size.Small"
+                                     Class="mr-2" />
+                            <MudText Typo="Typo.body2">@FormatEntityName(context.Item.EntityName)</MudText>
+                        </div>
+                    </CellTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.Category" Title="Category" Sortable="true">
+                    <CellTemplate>
+                        <MudChip T="string"
+                                 Color="@GetCategoryColor(context.Item.Category)"
+                                 Size="Size.Small"
+                                 Variant="Variant.Text">
+                            @context.Item.Category
+                        </MudChip>
+                    </CellTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.RecordCount" Title="Records" Sortable="true">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Color="@(context.Item.RecordCount > 0 ? Color.Default : Color.Secondary)">
+                            @context.Item.RecordCount.ToString("N0")
+                        </MudText>
+                    </CellTemplate>
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.IsSeeded" Title="Status" Sortable="true">
+                    <CellTemplate>
+                        @if (context.Item.IsSeeded)
+                        {
+                            <MudChip T="string"
+                                     Color="Color.Success"
+                                     Size="Size.Small"
+                                     Variant="Variant.Filled"
+                                     Icon="@Icons.Material.Filled.Check">
+                                Seeded
+                            </MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string"
+                                     Color="Color.Default"
+                                     Size="Size.Small"
+                                     Variant="Variant.Outlined"
+                                     Icon="@Icons.Material.Filled.HourglassEmpty">
+                                Empty
+                            </MudChip>
+                        }
+                    </CellTemplate>
+                </PropertyColumn>
+            </Columns>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    No entities match your search criteria.
+                </MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudDataGridPager T="EntitySummaryItem" PageSizeOptions="new int[] { 10, 25, 50 }" />
+            </PagerContent>
+        </MudDataGrid>
+
+        @* Summary Footer *@
+        <MudDivider Class="my-3" />
+        <div class="d-flex justify-space-between align-center">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Showing @FilteredEntities.Count() of @_allEntities.Count entities
+            </MudText>
+            <MudStack Row="true" Spacing="3">
+                <MudText Typo="Typo.caption">
+                    <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success" Class="mr-1" />
+                    @_allEntities.Count(e => e.IsSeeded) Seeded
+                </MudText>
+                <MudText Typo="Typo.caption">
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Size="Size.Small" Color="Color.Default" Class="mr-1" />
+                    @_allEntities.Count(e => !e.IsSeeded) Empty
+                </MudText>
+            </MudStack>
+        </div>
+    }
+</MudPaper>
+
+<style>
+    .cursor-pointer {
+        cursor: pointer;
+    }
+    .cursor-pointer:hover {
+        background-color: var(--mud-palette-action-default-hover) !important;
+    }
+</style>
+
+@code {
+    private bool _isLoading = true;
+    private string _searchString = string.Empty;
+    private string _selectedCategory = "All";
+    private List<EntitySummaryItem> _allEntities = new();
+    private Dictionary<string, int> _entityCounts = new();
+
+    private IEnumerable<EntitySummaryItem> FilteredEntities
+    {
+        get
+        {
+            var filtered = _allEntities.AsEnumerable();
+
+            // Filter by category
+            if (_selectedCategory != "All")
+            {
+                filtered = filtered.Where(e => e.Category == _selectedCategory);
+            }
+
+            // Filter by search string
+            if (!string.IsNullOrWhiteSpace(_searchString))
+            {
+                var search = _searchString.ToLowerInvariant();
+                filtered = filtered.Where(e =>
+                    e.EntityName.ToLowerInvariant().Contains(search) ||
+                    FormatEntityName(e.EntityName).ToLowerInvariant().Contains(search) ||
+                    e.Category.ToLowerInvariant().Contains(search));
+            }
+
+            return filtered.OrderBy(e => GetCategoryOrder(e.Category)).ThenBy(e => e.EntityName);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        LoadEntityTypes();
+        await LoadEntityCountsAsync();
+    }
+
+    private void LoadEntityTypes()
+    {
+        _allEntities.Clear();
+
+        // Configuration entities
+        foreach (var entity in ConfigEntities)
+        {
+            _allEntities.Add(new EntitySummaryItem
+            {
+                EntityName = entity.ToString(),
+                Category = "Configuration",
+                RecordCount = 0,
+                IsSeeded = false
+            });
+        }
+
+        // System entities
+        foreach (var entity in SystemEntities)
+        {
+            _allEntities.Add(new EntitySummaryItem
+            {
+                EntityName = entity.ToString(),
+                Category = "System",
+                RecordCount = 0,
+                IsSeeded = false
+            });
+        }
+
+        // Object entities
+        foreach (var entity in ObjectEntities)
+        {
+            _allEntities.Add(new EntitySummaryItem
+            {
+                EntityName = entity.ToString(),
+                Category = "Objects",
+                RecordCount = 0,
+                IsSeeded = false
+            });
+        }
+
+        // Transaction entities
+        foreach (var entity in TransactionEntities)
+        {
+            _allEntities.Add(new EntitySummaryItem
+            {
+                EntityName = entity.ToString(),
+                Category = "Transactions",
+                RecordCount = 0,
+                IsSeeded = false
+            });
+        }
+    }
+
+    private async Task LoadEntityCountsAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await SeedingService.GetSeedingStatusAsync();
+            if (result.IsSuccess && result.Value != null)
+            {
+                _entityCounts = result.Value.EntityCounts ?? new Dictionary<string, int>();
+
+                // Update entity counts
+                foreach (var entity in _allEntities)
+                {
+                    if (_entityCounts.TryGetValue(entity.EntityName, out var count))
+                    {
+                        entity.RecordCount = count;
+                        entity.IsSeeded = count > 0;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load entity counts");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshDataAsync()
+    {
+        await LoadEntityCountsAsync();
+    }
+
+    private void OnCategoryFilterChanged(string category)
+    {
+        _selectedCategory = category ?? "All";
+    }
+
+    private void OnRowClicked(DataGridRowClickEventArgs<EntitySummaryItem> args)
+    {
+        Navigation.NavigateTo($"/Seed/Entity/{args.Item.EntityName}");
+    }
+
+    private int GetCategoryCount(string category)
+    {
+        return _allEntities.Count(e => e.Category == category);
+    }
+
+    private int GetCategoryOrder(string category) => category switch
+    {
+        "Configuration" => 1,
+        "System" => 2,
+        "Objects" => 3,
+        "Transactions" => 4,
+        _ => 99
+    };
+
+    private Color GetCategoryColor(string category) => category switch
+    {
+        "Configuration" => Color.Info,
+        "System" => Color.Secondary,
+        "Objects" => Color.Success,
+        "Transactions" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private string GetCategoryIcon(string category) => category switch
+    {
+        "Configuration" => Icons.Material.Filled.Settings,
+        "System" => Icons.Material.Filled.Memory,
+        "Objects" => Icons.Material.Filled.Inventory,
+        "Transactions" => Icons.Material.Filled.Receipt,
+        _ => Icons.Material.Filled.Folder
+    };
+
+    private string FormatEntityName(string entity)
+    {
+        // Add spaces before capital letters for display
+        return System.Text.RegularExpressions.Regex.Replace(entity, "([a-z])([A-Z])", "$1 $2");
+    }
+
+    #region Entity Type Categories (from EntityType enum)
+
+    // Config Entities - core configuration data
+    private static readonly EntityType[] ConfigEntities =
+    {
+        EntityType.AuditLogItem,
+        EntityType.StockMovement
+    };
+
+    // System Entities - system-level entities
+    private static readonly EntityType[] SystemEntities =
+    {
+        EntityType.Document,
+        EntityType.Note,
+        EntityType.EntityTransactionNumber,
+        EntityType.PropertyFormattingRule,
+        EntityType.PropertyDisplayInformation,
+        EntityType.BusinessRule,
+        EntityType.ProductBatch
+    };
+
+    // Object Entities - master data entities
+    private static readonly EntityType[] ObjectEntities =
+    {
+        EntityType.User,
+        EntityType.Role,
+        EntityType.SecurityGroup,
+        EntityType.Permission,
+        EntityType.WorkflowStatus,
+        EntityType.Supplier,
+        EntityType.Address,
+        EntityType.Contact,
+        EntityType.StockMovementReason,
+        EntityType.Product,
+        EntityType.ProductCategory,
+        EntityType.UnitOfMeasure,
+        EntityType.Customer,
+        EntityType.Warehouse,
+        EntityType.Company,
+        EntityType.Site,
+        EntityType.Location,
+        EntityType.StockBin,
+        EntityType.Carrier,
+        EntityType.PaymentTerms,
+        EntityType.Department,
+        EntityType.Machine,
+        EntityType.WorkOrder,
+        EntityType.Project,
+        EntityType.Partner
+    };
+
+    // Transaction Entities - transactional documents
+    private static readonly EntityType[] TransactionEntities =
+    {
+        EntityType.PurchaseOrder,
+        EntityType.ShippingNote,
+        EntityType.PurchaseDeliveryNote,
+        EntityType.PurchaseReturn,
+        EntityType.StockBinTransfer,
+        EntityType.StockBinTransferRequest,
+        EntityType.StockIssue,
+        EntityType.StockIssueRequest,
+        EntityType.StockAdjustment,
+        EntityType.StockTake,
+        EntityType.StockReservation,
+        EntityType.StockQuarantine,
+        EntityType.InterWarehouseTransfer,
+        EntityType.InterSiteTransfer,
+        EntityType.SalesOrder,
+        EntityType.SalesPickingNote,
+        EntityType.SalesDeliveryNote,
+        EntityType.SalesShippingNote,
+        EntityType.SalesPackingNote,
+        EntityType.SalesReturn,
+        EntityType.StockPutAway
+    };
+
+    #endregion
+
+    /// <summary>
+    /// Represents a single entity in the summary grid
+    /// </summary>
+    public class EntitySummaryItem
+    {
+        public string EntityName { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public int RecordCount { get; set; }
+        public bool IsSeeded { get; set; }
+    }
+}

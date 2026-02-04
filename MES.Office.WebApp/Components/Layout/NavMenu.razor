@@ -1,0 +1,31 @@
+@inject NavigationManager NavigationManager
+
+<MudNavMenu>
+    <MudText Typo="Typo.h6" Class="px-4 py-2">Navigation</MudText>
+    <MudDivider Class="my-2" />
+
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+        Dashboard
+    </MudNavLink>
+
+    <MudNavGroup Title="Data Seeding" Icon="@Icons.Material.Filled.Storage" Expanded="true">
+        <MudNavLink Href="/seed" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.GridView">
+            Entity Browser
+        </MudNavLink>
+        <MudNavLink Href="/Seed/Entity" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.TableChart">
+            Entity Details
+        </MudNavLink>
+    </MudNavGroup>
+
+    <MudNavGroup Title="API Testing" Icon="@Icons.Material.Filled.Api" Expanded="true">
+        <MudNavLink Href="/testing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Science">
+            Endpoint Browser
+        </MudNavLink>
+    </MudNavGroup>
+
+    <MudDivider Class="my-2" />
+
+    <MudNavLink Href="/about" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Info">
+        About
+    </MudNavLink>
+</MudNavMenu>

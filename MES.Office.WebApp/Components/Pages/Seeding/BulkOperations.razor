@@ -1,0 +1,760 @@
+@using MudBlazor
+@using MES.Office.Application.Interfaces.Services
+@using MES.Office.WebAPI.Contracts.Enums
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Seeding
+@inject ISeeding_Service SeedingService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<MudPaper Elevation="2" Class="mt-4">
+    @* Header *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="pa-3 mud-theme-primary">
+        <MudIcon Icon="@Icons.Material.Filled.Settings" />
+        <MudText Typo="Typo.h6">Bulk Operations</MudText>
+        @if (_isOperationRunning)
+        {
+            <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled" Class="ml-auto">
+                Operation In Progress
+            </MudChip>
+        }
+    </MudStack>
+
+    @* Operation Buttons *@
+    <MudGrid Class="pa-4" Spacing="3">
+        @* Seed All Entities *@
+        <MudItem xs="12" md="3">
+            <MudCard Elevation="0" Class="border-dashed h-100" Style="border: 2px dashed #dee2e6;">
+                <MudCardContent Class="text-center py-4">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle"
+                             Color="Color.Success"
+                             Size="Size.Large"
+                             Class="mb-2" />
+                    <MudText Typo="Typo.h6" Class="mb-1">Seed All Entities</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Seeds all @TotalEntityCount entities in dependency order
+                    </MudText>
+                </MudCardContent>
+                <MudCardActions Class="justify-center pb-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="ConfirmSeedAllAsync"
+                               Disabled="@_isOperationRunning"
+                               Class="mx-4">
+                        Seed All
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @* Seed by Category *@
+        <MudItem xs="12" md="3">
+            <MudCard Elevation="0" Class="border-dashed h-100" Style="border: 2px dashed #dee2e6;">
+                <MudCardContent Class="text-center py-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Category"
+                             Color="Color.Info"
+                             Size="Size.Large"
+                             Class="mb-2" />
+                    <MudText Typo="Typo.h6" Class="mb-1">Seed by Category</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                        Select a category to seed
+                    </MudText>
+                    <MudSelect T="string"
+                               @bind-Value="_selectedCategory"
+                               Label="Category"
+                               Variant="Variant.Outlined"
+                               Dense="true"
+                               Class="mx-4">
+                        <MudSelectItem Value="@("Configuration")">Configuration</MudSelectItem>
+                        <MudSelectItem Value="@("System")">System</MudSelectItem>
+                        <MudSelectItem Value="@("Objects")">Objects</MudSelectItem>
+                        <MudSelectItem Value="@("Transactions")">Transactions</MudSelectItem>
+                    </MudSelect>
+                </MudCardContent>
+                <MudCardActions Class="justify-center pb-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Info"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="SeedByCategoryAsync"
+                               Disabled="@(_isOperationRunning || string.IsNullOrEmpty(_selectedCategory))"
+                               Class="mx-4">
+                        Seed Category
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @* Seed Foundational Data *@
+        <MudItem xs="12" md="3">
+            <MudCard Elevation="0" Class="border-dashed h-100" Style="border: 2px dashed #dee2e6;">
+                <MudCardContent Class="text-center py-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Foundation"
+                             Color="Color.Primary"
+                             Size="Size.Large"
+                             Class="mb-2" />
+                    <MudText Typo="Typo.h6" Class="mb-1">Seed Foundational</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Configuration + System entities only
+                    </MudText>
+                </MudCardContent>
+                <MudCardActions Class="justify-center pb-4">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="SeedFoundationalAsync"
+                               Disabled="@_isOperationRunning"
+                               Class="mx-4">
+                        Seed Foundational
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @* Clear All Data *@
+        <MudItem xs="12" md="3">
+            <MudCard Elevation="0" Class="h-100" Style="border: 2px dashed #dc3545;">
+                <MudCardContent Class="text-center py-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Delete"
+                             Color="Color.Error"
+                             Size="Size.Large"
+                             Class="mb-2" />
+                    <MudText Typo="Typo.h6" Class="mb-1">Clear All Data</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Removes all seeded data (requires confirmation)
+                    </MudText>
+                </MudCardContent>
+                <MudCardActions Class="justify-center pb-4">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.DeleteForever"
+                               OnClick="ConfirmClearAllAsync"
+                               Disabled="@_isOperationRunning"
+                               Class="mx-4">
+                        Clear All
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* Progress Tracking Section *@
+    @if (_isOperationRunning || _entityProgressItems.Count > 0)
+    {
+        <MudDivider />
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold">
+                    <MudIcon Icon="@Icons.Material.Filled.Timeline" Size="Size.Small" Class="mr-1" />
+                    Progress Tracking
+                </MudText>
+                @if (_isOperationRunning && _cancellationRequested == false)
+                {
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Cancel"
+                               OnClick="RequestCancellation">
+                        Cancel Operation
+                    </MudButton>
+                }
+                @if (_cancellationRequested)
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">
+                        Cancellation Requested...
+                    </MudChip>
+                }
+            </MudStack>
+
+            @* Overall Progress *@
+            <MudPaper Elevation="1" Class="pa-3 mb-3" Style="background-color: #f5f5f5;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudText Typo="Typo.body2">
+                        <strong>Overall Progress:</strong> @_completedEntities / @_totalEntities entities
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @if (_estimatedTimeRemaining.HasValue)
+                        {
+                            @($"Est. remaining: {FormatTimeSpan(_estimatedTimeRemaining.Value)}")
+                        }
+                    </MudText>
+                </MudStack>
+                <MudProgressLinear Color="@GetOverallProgressColor()"
+                                   Value="@OverallProgressPercent"
+                                   Class="my-2"
+                                   Size="Size.Medium"
+                                   Rounded="true" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.caption" Color="Color.Success">
+                        @_successCount succeeded
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Error">
+                        @_failureCount failed
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">
+                        @_skippedCount skipped
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+
+            @* Entity Progress List *@
+            <MudPaper Elevation="1" Style="max-height: 300px; overflow-y: auto;">
+                <MudList T="EntityProgressItem" Dense="true">
+                    @foreach (var item in _entityProgressItems.OrderByDescending(x => x.StartTime ?? DateTime.MinValue))
+                    {
+                        <MudListItem>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Style="width: 100%;">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    @switch (item.Status)
+                                    {
+                                        case EntityStatus.Pending:
+                                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Color="Color.Default" Size="Size.Small" />
+                                            break;
+                                        case EntityStatus.InProgress:
+                                            <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+                                            break;
+                                        case EntityStatus.Completed:
+                                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                                            break;
+                                        case EntityStatus.Failed:
+                                            <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" Size="Size.Small" />
+                                            break;
+                                        case EntityStatus.Skipped:
+                                            <MudIcon Icon="@Icons.Material.Filled.SkipNext" Color="Color.Warning" Size="Size.Small" />
+                                            break;
+                                    }
+                                    <MudText Typo="Typo.body2" Class="fw-semibold">@FormatEntityName(item.EntityType)</MudText>
+                                </MudStack>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    @if (item.RecordCount.HasValue)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">
+                                            @item.RecordCount records
+                                        </MudChip>
+                                    }
+                                    @if (item.Duration.HasValue)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            @item.Duration.Value.TotalSeconds.ToString("F2")s
+                                        </MudText>
+                                    }
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Color="@GetStatusColor(item.Status)"
+                                             Variant="Variant.Filled">
+                                        @item.Status.ToString()
+                                    </MudChip>
+                                </MudStack>
+                            </MudStack>
+                            @if (!string.IsNullOrEmpty(item.Message))
+                            {
+                                <MudText Typo="Typo.caption" Color="@(item.Status == EntityStatus.Failed ? Color.Error : Color.Secondary)" Class="ml-8">
+                                    @item.Message
+                                </MudText>
+                            }
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        </MudPaper>
+    }
+
+    @* Operation Log Section *@
+    @if (_operationLogs.Count > 0)
+    {
+        <MudDivider />
+        <MudPaper Elevation="0" Class="pa-4">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.subtitle1" Class="fw-bold">
+                    <MudIcon Icon="@Icons.Material.Filled.List" Size="Size.Small" Class="mr-1" />
+                    Operation Log (@_operationLogs.Count entries)
+                </MudText>
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Download"
+                               OnClick="ExportLogAsync">
+                        Export Log
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Size="Size.Small"
+                               Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.Clear"
+                               OnClick="ClearLogs">
+                        Clear
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            <MudPaper Elevation="1"
+                      Class="pa-3"
+                      Style="max-height: 250px; overflow-y: auto; background-color: #1e1e1e; font-family: 'Consolas', 'Courier New', monospace;">
+                @foreach (var log in _operationLogs.AsEnumerable().Reverse().Take(100))
+                {
+                    <MudText Typo="Typo.caption" Style="@GetLogStyle(log.Level)">
+                        [@log.Timestamp.ToString("HH:mm:ss.fff")] [@log.Level] @log.Message
+                    </MudText>
+                }
+            </MudPaper>
+        </MudPaper>
+    }
+</MudPaper>
+
+<style>
+    .border-dashed:hover {
+        border-color: var(--mud-palette-primary) !important;
+        background-color: var(--mud-palette-background-grey);
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Dictionary<string, List<string>> EntitiesByCategory { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnOperationCompleted { get; set; }
+
+    private string _selectedCategory = "";
+    private bool _isOperationRunning;
+    private bool _cancellationRequested;
+    private CancellationTokenSource? _cancellationTokenSource;
+
+    // Progress tracking
+    private int _totalEntities;
+    private int _completedEntities;
+    private int _successCount;
+    private int _failureCount;
+    private int _skippedCount;
+    private DateTime _operationStartTime;
+    private TimeSpan? _estimatedTimeRemaining;
+    private List<EntityProgressItem> _entityProgressItems = new();
+
+    // Operation logs
+    private List<OperationLogEntry> _operationLogs = new();
+
+    private int TotalEntityCount => EntitiesByCategory.Values.Sum(v => v.Count);
+    private double OverallProgressPercent => _totalEntities > 0 ? (double)_completedEntities / _totalEntities * 100 : 0;
+
+    #region Operation Methods
+
+    private async Task ConfirmSeedAllAsync()
+    {
+        var parameters = new DialogParameters<ConfirmOperationDialog>
+        {
+            { x => x.Title, "Seed All Entities" },
+            { x => x.ContentText, $"This will seed all {TotalEntityCount} entities in dependency order. This may take several minutes." },
+            { x => x.ConfirmButtonText, "Start Seeding" },
+            { x => x.ConfirmButtonColor, Color.Success }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small };
+        var dialog = await DialogService.ShowAsync<ConfirmOperationDialog>("Confirm Operation", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await SeedAllEntitiesAsync();
+        }
+    }
+
+    private async Task SeedAllEntitiesAsync()
+    {
+        await StartOperationAsync("Seed All Entities", GetAllEntitiesOrdered());
+    }
+
+    private async Task SeedByCategoryAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedCategory) || !EntitiesByCategory.TryGetValue(_selectedCategory, out var entities))
+        {
+            Snackbar.Add("Please select a valid category", Severity.Warning);
+            return;
+        }
+
+        await StartOperationAsync($"Seed {_selectedCategory}", entities);
+    }
+
+    private async Task SeedFoundationalAsync()
+    {
+        var foundationalEntities = new List<string>();
+        if (EntitiesByCategory.TryGetValue("Configuration", out var configEntities))
+            foundationalEntities.AddRange(configEntities);
+        if (EntitiesByCategory.TryGetValue("System", out var systemEntities))
+            foundationalEntities.AddRange(systemEntities);
+
+        await StartOperationAsync("Seed Foundational Data", foundationalEntities);
+    }
+
+    private async Task ConfirmClearAllAsync()
+    {
+        var parameters = new DialogParameters<ConfirmClearDialog>
+        {
+            { x => x.ContentText, "DANGER: This will delete ALL data from the database! This action cannot be undone." },
+            { x => x.ConfirmationCode, "DELETE_ALL_DATA" }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small };
+        var dialog = await DialogService.ShowAsync<ConfirmClearDialog>("Confirm Delete", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await ClearAllDataAsync();
+        }
+    }
+
+    private async Task ClearAllDataAsync()
+    {
+        InitializeOperation("Clear All Data", new List<string> { "TransactionData", "ConfigurationData" });
+
+        try
+        {
+            UpdateEntityStatus("TransactionData", EntityStatus.InProgress);
+            AddLog(LogLevel.Info, "Clearing transaction data...");
+
+            var transactionResult = await SeedingService.ClearTransactionDataAsync();
+            if (transactionResult.IsSuccess)
+            {
+                UpdateEntityStatus("TransactionData", EntityStatus.Completed, "Transaction data cleared");
+                AddLog(LogLevel.Success, "Transaction data cleared successfully");
+            }
+            else
+            {
+                UpdateEntityStatus("TransactionData", EntityStatus.Failed, transactionResult.Message);
+                AddLog(LogLevel.Error, $"Failed to clear transaction data: {transactionResult.Message}");
+            }
+
+            if (!_cancellationRequested)
+            {
+                UpdateEntityStatus("ConfigurationData", EntityStatus.InProgress);
+                AddLog(LogLevel.Info, "Clearing configuration data...");
+
+                var configResult = await SeedingService.ClearConfigurationDataAsync();
+                if (configResult.IsSuccess)
+                {
+                    UpdateEntityStatus("ConfigurationData", EntityStatus.Completed, "Configuration data cleared");
+                    AddLog(LogLevel.Success, "Configuration data cleared successfully");
+                }
+                else
+                {
+                    UpdateEntityStatus("ConfigurationData", EntityStatus.Failed, configResult.Message);
+                    AddLog(LogLevel.Error, $"Failed to clear configuration data: {configResult.Message}");
+                }
+            }
+
+            await FinalizeOperationAsync();
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, $"Clear operation failed: {ex.Message}");
+            await FinalizeOperationAsync();
+        }
+    }
+
+    private async Task StartOperationAsync(string operationName, List<string> entities)
+    {
+        InitializeOperation(operationName, entities);
+
+        try
+        {
+            foreach (var entity in entities)
+            {
+                if (_cancellationRequested)
+                {
+                    AddLog(LogLevel.Warning, "Operation cancelled by user");
+                    foreach (var pendingEntity in _entityProgressItems.Where(x => x.Status == EntityStatus.Pending))
+                    {
+                        pendingEntity.Status = EntityStatus.Skipped;
+                        pendingEntity.Message = "Cancelled";
+                        _skippedCount++;
+                        _completedEntities++;
+                    }
+                    break;
+                }
+
+                await SeedEntityWithProgressAsync(entity);
+                await InvokeAsync(StateHasChanged);
+            }
+
+            await FinalizeOperationAsync();
+        }
+        catch (Exception ex)
+        {
+            AddLog(LogLevel.Error, $"Operation failed: {ex.Message}");
+            await FinalizeOperationAsync();
+        }
+    }
+
+    private async Task SeedEntityWithProgressAsync(string entityType)
+    {
+        var progressItem = _entityProgressItems.First(x => x.EntityType == entityType);
+        progressItem.Status = EntityStatus.InProgress;
+        progressItem.StartTime = DateTime.Now;
+
+        AddLog(LogLevel.Info, $"Seeding {entityType}...");
+        await InvokeAsync(StateHasChanged);
+
+        var startTime = DateTime.Now;
+
+        try
+        {
+            var result = await SeedingService.SeedSpecificEntityAsync(entityType);
+            var duration = DateTime.Now - startTime;
+
+            progressItem.Duration = duration;
+            progressItem.EndTime = DateTime.Now;
+
+            if (result.IsSuccess)
+            {
+                progressItem.Status = EntityStatus.Completed;
+                progressItem.RecordCount = result.Value?.SuccessCount;
+                progressItem.Message = $"{result.Value?.SuccessCount ?? 0} records created";
+                _successCount++;
+                AddLog(LogLevel.Success, $"{entityType}: {result.Value?.SuccessCount ?? 0} records seeded in {duration.TotalSeconds:F2}s");
+            }
+            else
+            {
+                progressItem.Status = EntityStatus.Failed;
+                progressItem.Message = result.Message;
+                _failureCount++;
+                AddLog(LogLevel.Error, $"{entityType}: Failed - {result.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            progressItem.Status = EntityStatus.Failed;
+            progressItem.Duration = DateTime.Now - startTime;
+            progressItem.Message = ex.Message;
+            _failureCount++;
+            AddLog(LogLevel.Error, $"{entityType}: Exception - {ex.Message}");
+        }
+
+        _completedEntities++;
+        UpdateEstimatedTimeRemaining();
+    }
+
+    #endregion
+
+    #region Progress Management
+
+    private void InitializeOperation(string operationName, List<string> entities)
+    {
+        _isOperationRunning = true;
+        _cancellationRequested = false;
+        _cancellationTokenSource = new CancellationTokenSource();
+        _operationStartTime = DateTime.Now;
+        _totalEntities = entities.Count;
+        _completedEntities = 0;
+        _successCount = 0;
+        _failureCount = 0;
+        _skippedCount = 0;
+        _estimatedTimeRemaining = null;
+
+        _entityProgressItems = entities.Select(e => new EntityProgressItem
+        {
+            EntityType = e,
+            Status = EntityStatus.Pending
+        }).ToList();
+
+        AddLog(LogLevel.Info, $"Starting operation: {operationName}");
+        AddLog(LogLevel.Info, $"Processing {entities.Count} entities");
+    }
+
+    private async Task FinalizeOperationAsync()
+    {
+        _isOperationRunning = false;
+        _cancellationTokenSource?.Dispose();
+        _cancellationTokenSource = null;
+
+        var duration = DateTime.Now - _operationStartTime;
+        AddLog(LogLevel.Info, $"Operation completed in {FormatTimeSpan(duration)}");
+        AddLog(LogLevel.Info, $"Results: {_successCount} succeeded, {_failureCount} failed, {_skippedCount} skipped");
+
+        var severity = _failureCount == 0 ? Severity.Success : (_successCount > 0 ? Severity.Warning : Severity.Error);
+        Snackbar.Add($"Operation completed: {_successCount} succeeded, {_failureCount} failed", severity);
+
+        await OnOperationCompleted.InvokeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateEntityStatus(string entityType, EntityStatus status, string? message = null)
+    {
+        var item = _entityProgressItems.FirstOrDefault(x => x.EntityType == entityType);
+        if (item != null)
+        {
+            item.Status = status;
+            if (message != null) item.Message = message;
+            if (status == EntityStatus.InProgress) item.StartTime = DateTime.Now;
+            if (status is EntityStatus.Completed or EntityStatus.Failed or EntityStatus.Skipped)
+            {
+                item.EndTime = DateTime.Now;
+                if (item.StartTime.HasValue)
+                    item.Duration = item.EndTime - item.StartTime;
+                _completedEntities++;
+
+                if (status == EntityStatus.Completed) _successCount++;
+                else if (status == EntityStatus.Failed) _failureCount++;
+                else if (status == EntityStatus.Skipped) _skippedCount++;
+            }
+        }
+    }
+
+    private void UpdateEstimatedTimeRemaining()
+    {
+        if (_completedEntities > 0 && _completedEntities < _totalEntities)
+        {
+            var elapsed = DateTime.Now - _operationStartTime;
+            var avgTimePerEntity = elapsed.TotalMilliseconds / _completedEntities;
+            var remainingEntities = _totalEntities - _completedEntities;
+            _estimatedTimeRemaining = TimeSpan.FromMilliseconds(avgTimePerEntity * remainingEntities);
+        }
+        else if (_completedEntities >= _totalEntities)
+        {
+            _estimatedTimeRemaining = null;
+        }
+    }
+
+    private void RequestCancellation()
+    {
+        _cancellationRequested = true;
+        _cancellationTokenSource?.Cancel();
+        AddLog(LogLevel.Warning, "Cancellation requested - waiting for current entity to complete...");
+        Snackbar.Add("Cancellation requested - current operation will complete", Severity.Warning);
+    }
+
+    #endregion
+
+    #region Logging
+
+    private void AddLog(LogLevel level, string message)
+    {
+        _operationLogs.Add(new OperationLogEntry
+        {
+            Timestamp = DateTime.Now,
+            Level = level,
+            Message = message
+        });
+    }
+
+    private void ClearLogs()
+    {
+        _operationLogs.Clear();
+        _entityProgressItems.Clear();
+        StateHasChanged();
+    }
+
+    private async Task ExportLogAsync()
+    {
+        var logContent = string.Join(Environment.NewLine,
+            _operationLogs.Select(l => $"[{l.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{l.Level}] {l.Message}"));
+
+        var fileName = $"seeding-log-{DateTime.Now:yyyyMMdd-HHmmss}.txt";
+
+        // Use JavaScript to download the file
+        await JSRuntime.InvokeVoidAsync("downloadFile", fileName, logContent);
+        Snackbar.Add($"Log exported as {fileName}", Severity.Success);
+    }
+
+    private string GetLogStyle(LogLevel level) => level switch
+    {
+        LogLevel.Success => "color: #4caf50;",
+        LogLevel.Error => "color: #f44336;",
+        LogLevel.Warning => "color: #ff9800;",
+        _ => "color: #9e9e9e;"
+    };
+
+    #endregion
+
+    #region Helper Methods
+
+    private List<string> GetAllEntitiesOrdered()
+    {
+        var ordered = new List<string>();
+        var categoryOrder = new[] { "Configuration", "System", "Objects", "Transactions" };
+
+        foreach (var category in categoryOrder)
+        {
+            if (EntitiesByCategory.TryGetValue(category, out var entities))
+            {
+                ordered.AddRange(entities);
+            }
+        }
+
+        return ordered;
+    }
+
+    private string FormatEntityName(string entity)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(entity, "([a-z])([A-Z])", "$1 $2");
+    }
+
+    private string FormatTimeSpan(TimeSpan ts)
+    {
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m {ts.Seconds}s";
+        if (ts.TotalMinutes >= 1)
+            return $"{ts.Minutes}m {ts.Seconds}s";
+        return $"{ts.Seconds}s";
+    }
+
+    private Color GetStatusColor(EntityStatus status) => status switch
+    {
+        EntityStatus.Pending => Color.Default,
+        EntityStatus.InProgress => Color.Primary,
+        EntityStatus.Completed => Color.Success,
+        EntityStatus.Failed => Color.Error,
+        EntityStatus.Skipped => Color.Warning,
+        _ => Color.Default
+    };
+
+    private Color GetOverallProgressColor()
+    {
+        if (_failureCount > 0 && _successCount == 0) return Color.Error;
+        if (_failureCount > 0) return Color.Warning;
+        return Color.Primary;
+    }
+
+    #endregion
+
+    #region Nested Types
+
+    private class EntityProgressItem
+    {
+        public string EntityType { get; set; } = "";
+        public EntityStatus Status { get; set; }
+        public string? Message { get; set; }
+        public int? RecordCount { get; set; }
+        public DateTime? StartTime { get; set; }
+        public DateTime? EndTime { get; set; }
+        public TimeSpan? Duration { get; set; }
+    }
+
+    private enum EntityStatus
+    {
+        Pending,
+        InProgress,
+        Completed,
+        Failed,
+        Skipped
+    }
+
+    private class OperationLogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public LogLevel Level { get; set; }
+        public string Message { get; set; } = "";
+    }
+
+    private enum LogLevel
+    {
+        Info,
+        Success,
+        Warning,
+        Error
+    }
+
+    #endregion
+}

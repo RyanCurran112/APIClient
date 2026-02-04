@@ -1,0 +1,367 @@
+@using MES.Office.WebApp.Services
+@inject ISeedingConfigurationService ConfigService
+@inject ISnackbar Snackbar
+
+<MudDrawer @bind-Open="@IsOpen"
+           Anchor="Anchor.Right"
+           Elevation="2"
+           Variant="DrawerVariant.Temporary"
+           Width="400px">
+    <MudDrawerHeader Class="d-flex align-center justify-space-between">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Seeding Configuration</MudText>
+        </MudStack>
+        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                       Size="Size.Small"
+                       OnClick="@CloseDrawer" />
+    </MudDrawerHeader>
+
+    <MudDivider />
+
+    <div class="pa-4" style="overflow-y: auto; height: calc(100vh - 180px);">
+        @if (_isLoading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+        }
+
+        @* API Connection Section *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Cloud" Size="Size.Small" />
+            API Connection
+        </MudText>
+        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey);">
+            <MudTextField Value="@_apiBaseUrl"
+                          Label="API Base URL"
+                          Variant="Variant.Outlined"
+                          ReadOnly="true"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Link"
+                          HelperText="Configured in appsettings.json"
+                          Class="mb-3" />
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@GetConnectionIcon()"
+                             Color="@GetConnectionColor()"
+                             Size="Size.Small" />
+                    <MudText Typo="Typo.body2">
+                        @(_connectionStatus?.Message ?? "Not tested")
+                    </MudText>
+                </MudStack>
+                @if (_connectionStatus?.ResponseTimeMs > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text">
+                        @(_connectionStatus.ResponseTimeMs)ms
+                    </MudChip>
+                }
+            </MudStack>
+
+            @if (_connectionStatus?.LastConnected != null)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                    Last connected: @_connectionStatus.LastConnected.Value.ToLocalTime().ToString("g")
+                </MudText>
+            }
+
+            @if (!string.IsNullOrEmpty(_connectionStatus?.ApiVersion))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                    API Version: @_connectionStatus.ApiVersion
+                </MudText>
+            }
+
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.NetworkCheck"
+                       OnClick="@TestConnectionAsync"
+                       Disabled="@_isTestingConnection"
+                       FullWidth="true"
+                       Size="Size.Small">
+                @if (_isTestingConnection)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <text>Testing...</text>
+                }
+                else
+                {
+                    <text>Test Connection</text>
+                }
+            </MudButton>
+        </MudPaper>
+
+        @* Seeding Options Section *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Small" />
+            Seeding Options
+        </MudText>
+        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey);">
+            <MudNumericField @bind-Value="_config.DefaultBatchSize"
+                             Label="Default Batch Size"
+                             Variant="Variant.Outlined"
+                             Min="1"
+                             Max="1000"
+                             Step="10"
+                             Adornment="Adornment.Start"
+                             AdornmentIcon="@Icons.Material.Filled.Layers"
+                             HelperText="Records per batch (1-1000)"
+                             Class="mb-3" />
+
+            <MudNumericField @bind-Value="_config.TimeoutSeconds"
+                             Label="Timeout (seconds)"
+                             Variant="Variant.Outlined"
+                             Min="5"
+                             Max="300"
+                             Step="5"
+                             Adornment="Adornment.Start"
+                             AdornmentIcon="@Icons.Material.Filled.Timer"
+                             HelperText="API operation timeout (5-300s)"
+                             Class="mb-3" />
+
+            <MudSelect @bind-Value="_config.SelectedDataSource"
+                       Label="Data Source"
+                       Variant="Variant.Outlined"
+                       Adornment="Adornment.Start"
+                       AdornmentIcon="@Icons.Material.Filled.Source"
+                       Class="mb-3">
+                <MudSelectItem Value="@("Default")">Default (JSON Files)</MudSelectItem>
+                <MudSelectItem Value="@("Development")">Development Data</MudSelectItem>
+                <MudSelectItem Value="@("Test")">Test Data</MudSelectItem>
+            </MudSelect>
+        </MudPaper>
+
+        @* Performance Section *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Speed" Size="Size.Small" />
+            Performance
+        </MudText>
+        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey);">
+            <MudSwitch @bind-Value="_config.EnableParallelSeeding"
+                       Label="Enable Parallel Seeding"
+                       Color="Color.Primary"
+                       Class="mb-2" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Process independent entities concurrently
+            </MudText>
+
+            @if (_config.EnableParallelSeeding)
+            {
+                <MudNumericField @bind-Value="_config.MaxParallelOperations"
+                                 Label="Max Parallel Operations"
+                                 Variant="Variant.Outlined"
+                                 Min="2"
+                                 Max="10"
+                                 Step="1"
+                                 HelperText="Concurrent operations (2-10)"
+                                 Class="mb-3" />
+            }
+        </MudPaper>
+
+        @* Seeding Behavior Section *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Rule" Size="Size.Small" />
+            Seeding Behavior
+        </MudText>
+        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey);">
+            <MudSwitch @bind-Value="_config.RespectDependencyOrder"
+                       Label="Respect Dependency Order"
+                       Color="Color.Primary"
+                       Class="mb-1" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Seed entities in dependency order (Configuration, System, Objects, Transactions)
+            </MudText>
+
+            <MudSwitch @bind-Value="_config.SkipExistingData"
+                       Label="Skip Entities with Existing Data"
+                       Color="Color.Primary"
+                       Class="mb-1" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Skip seeding if entity already has records
+            </MudText>
+
+            <MudSwitch @bind-Value="_config.ContinueOnError"
+                       Label="Continue on Error"
+                       Color="Color.Warning"
+                       Class="mb-1" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">
+                Continue seeding other entities if one fails
+            </MudText>
+        </MudPaper>
+
+        @* Logging Section *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2 d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.TextSnippet" Size="Size.Small" />
+            Logging
+        </MudText>
+        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey);">
+            <MudSwitch @bind-Value="_config.VerboseLogging"
+                       Label="Verbose Logging"
+                       Color="Color.Primary"
+                       Class="mb-1" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Show detailed progress during seeding operations
+            </MudText>
+        </MudPaper>
+    </div>
+
+    @* Footer Actions *@
+    <MudDivider />
+    <MudStack Row="true" Justify="Justify.SpaceBetween" Class="pa-3">
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Restore"
+                   OnClick="@ResetToDefaultsAsync"
+                   Disabled="@_isLoading">
+            Reset
+        </MudButton>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Text"
+                       OnClick="@CloseDrawer">
+                Cancel
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="@SaveConfigurationAsync"
+                       Disabled="@_isLoading">
+                Save
+            </MudButton>
+        </MudStack>
+    </MudStack>
+</MudDrawer>
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    private SeedingPreferences _config = new();
+    private ApiConnectionStatus? _connectionStatus;
+    private string _apiBaseUrl = string.Empty;
+    private bool _isLoading = true;
+    private bool _isTestingConnection = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiBaseUrl = ConfigService.GetApiBaseUrl();
+        await LoadConfigurationAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && _isLoading)
+        {
+            await LoadConfigurationAsync();
+        }
+    }
+
+    private async Task LoadConfigurationAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _config = await ConfigService.GetConfigurationAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load configuration: {ex.Message}", Severity.Warning);
+            _config = new SeedingPreferences();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveConfigurationAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            await ConfigService.SaveConfigurationAsync(_config);
+            Snackbar.Add("Configuration saved successfully", Severity.Success);
+            await CloseDrawer();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save configuration: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ResetToDefaultsAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            await ConfigService.ResetToDefaultsAsync();
+            _config = new SeedingPreferences();
+            Snackbar.Add("Configuration reset to defaults", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reset configuration: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task TestConnectionAsync()
+    {
+        _isTestingConnection = true;
+        try
+        {
+            _connectionStatus = await ConfigService.TestConnectionAsync();
+
+            if (_connectionStatus.IsConnected)
+            {
+                Snackbar.Add("API connection successful", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add(_connectionStatus.Message, Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Connection test failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isTestingConnection = false;
+        }
+    }
+
+    private async Task CloseDrawer()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private string GetConnectionIcon()
+    {
+        if (_connectionStatus == null)
+            return Icons.Material.Filled.HelpOutline;
+
+        return _connectionStatus.IsConnected
+            ? Icons.Material.Filled.CheckCircle
+            : Icons.Material.Filled.Error;
+    }
+
+    private Color GetConnectionColor()
+    {
+        if (_connectionStatus == null)
+            return Color.Default;
+
+        return _connectionStatus.IsConnected
+            ? Color.Success
+            : Color.Error;
+    }
+}

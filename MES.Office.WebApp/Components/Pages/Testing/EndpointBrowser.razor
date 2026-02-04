@@ -1,0 +1,936 @@
+@page "/testing"
+@page "/test"
+@rendermode InteractiveServer
+
+@inject IEndpointTesting_Service EndpointTestingService
+@inject ILogger<EndpointBrowser> Logger
+@inject IJSRuntime JSRuntime
+@inject ISnackbar Snackbar
+
+<PageTitle>Endpoint Browser - MES Office WebApp</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">API Endpoint Browser</MudText>
+
+<MudGrid>
+    @* Left Panel - Endpoint List *@
+    <MudItem xs="12" lg="5">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: calc(100vh - 200px); overflow-y: auto;">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.List" Class="mr-2" />
+                Available Endpoints
+                @if (_endpoints?.Any() == true)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-2">@_endpoints.Count</MudChip>
+                }
+            </MudText>
+
+            @* Search Box *@
+            <MudTextField @bind-Value="_searchText"
+                          Placeholder="Search endpoints..."
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Class="mb-4"
+                          Clearable="true" />
+
+            @if (_isLoading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="50px" Class="mb-2" />
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="50px" Class="mb-2" />
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="50px" Class="mb-2" />
+            }
+            else if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">
+                    <MudText>@_errorMessage</MudText>
+                </MudAlert>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadEndpointsAsync">
+                    Retry
+                </MudButton>
+            }
+            else if (_endpointsByCategory?.Any() == true)
+            {
+                @* Category Summary Cards *@
+                <MudGrid Class="mb-4" Spacing="1">
+                    @foreach (var category in _endpointsByCategory)
+                    {
+                        var categoryCount = GetFilteredEndpoints(category.Value).Count;
+                        if (categoryCount > 0 || string.IsNullOrEmpty(_searchText))
+                        {
+                            <MudItem xs="6" sm="4">
+                                <MudPaper Elevation="1" Class="@($"pa-2 text-center {(categoryCount == 0 ? "mud-text-disabled" : "")}")">
+                                    <MudText Typo="Typo.caption">@category.Key</MudText>
+                                    <MudText Typo="Typo.subtitle1"><strong>@categoryCount</strong></MudText>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    }
+                </MudGrid>
+
+                @* Endpoint Expansion Panels by Category *@
+                <MudExpansionPanels MultiExpansion="true">
+                    @foreach (var category in _endpointsByCategory)
+                    {
+                        var filteredEndpoints = GetFilteredEndpoints(category.Value);
+                        @if (filteredEndpoints.Any())
+                        {
+                            <MudExpansionPanel Text="@category.Key"
+                                               IsInitiallyExpanded="@ShouldExpandCategory(category.Key)">
+                                <TitleContent>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                        <MudText>@category.Key</MudText>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default">@filteredEndpoints.Count</MudChip>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                    <MudList T="EndpointInfo" Dense="true" Class="py-0">
+                                        @foreach (var endpoint in filteredEndpoints)
+                                        {
+                                            <MudListItem T="EndpointInfo"
+                                                         Class="@GetEndpointItemClass(endpoint)"
+                                                         OnClick="@(() => SelectEndpoint(endpoint))">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                                    <MudChip T="string" Size="Size.Small" Color="@GetMethodColor(endpoint.Method.Method)" Variant="Variant.Filled" Class="method-chip">
+                                                        @endpoint.Method.Method.ToUpper()
+                                                    </MudChip>
+                                                    <MudStack Spacing="0" Class="flex-grow-1">
+                                                        <MudText Typo="Typo.body2"><code>@endpoint.Path</code></MudText>
+                                                        @if (!string.IsNullOrEmpty(endpoint.Description))
+                                                        {
+                                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@TruncateText(endpoint.Description, 50)</MudText>
+                                                        }
+                                                    </MudStack>
+                                                </MudStack>
+                                            </MudListItem>
+                                        }
+                                    </MudList>
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    }
+                </MudExpansionPanels>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">
+                    No endpoints available. Make sure the API is running.
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* Right Panel - Test Form and Results *@
+    <MudItem xs="12" lg="7">
+        <MudPaper Elevation="2" Class="pa-4" Style="height: calc(100vh - 200px); overflow-y: auto;">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.Science" Class="mr-2" />
+                Test Panel
+            </MudText>
+
+            @* Selected Endpoint Display *@
+            @if (_selectedEndpoint != null)
+            {
+                <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background-color: var(--mud-palette-background-grey); border-radius: 4px;">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudChip T="string" Size="Size.Medium" Color="@GetMethodColor(_selectedEndpoint.Method.Method)" Variant="Variant.Filled" Class="method-chip-large">
+                            @_selectedEndpoint.Method.Method.ToUpper()
+                        </MudChip>
+                        <MudStack Spacing="0" Class="flex-grow-1">
+                            <MudText Typo="Typo.subtitle1" Style="font-family: 'Consolas', 'Monaco', monospace;">@_selectedEndpoint.Path</MudText>
+                            @if (!string.IsNullOrEmpty(_selectedEndpoint.Description))
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_selectedEndpoint.Description</MudText>
+                            }
+                        </MudStack>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                       Size="Size.Small"
+                                       OnClick="ClearSelectedEndpoint"
+                                       Title="Clear selection" />
+                    </MudStack>
+                </MudPaper>
+            }
+
+            @* Test Form *@
+            <MudStack Spacing="3">
+                @* Endpoint URL with Method *@
+                <MudGrid>
+                    <MudItem xs="12" sm="3">
+                        <MudSelect T="string" @bind-Value="_selectedMethod"
+                                   Label="Method"
+                                   Variant="Variant.Outlined"
+                                   Dense="true">
+                            <MudSelectItem T="string" Value="@("GET")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">GET</MudChip>
+                            </MudSelectItem>
+                            <MudSelectItem T="string" Value="@("POST")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">POST</MudChip>
+                            </MudSelectItem>
+                            <MudSelectItem T="string" Value="@("PUT")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">PUT</MudChip>
+                            </MudSelectItem>
+                            <MudSelectItem T="string" Value="@("PATCH")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled">PATCH</MudChip>
+                            </MudSelectItem>
+                            <MudSelectItem T="string" Value="@("DELETE")">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">DELETE</MudChip>
+                            </MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="9">
+                        <MudTextField @bind-Value="_endpointUrl"
+                                      Label="Endpoint URL"
+                                      Variant="Variant.Outlined"
+                                      Placeholder="/api/stock-issue-requests"
+                                      Dense="true" />
+                    </MudItem>
+                </MudGrid>
+
+                @* Request Body (shown for POST/PUT/PATCH) *@
+                @if (_selectedMethod == "POST" || _selectedMethod == "PUT" || _selectedMethod == "PATCH")
+                {
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2">Request Body (JSON)</MudText>
+                            <MudStack Row="true" Spacing="1">
+                                <MudButton Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.FormatIndentIncrease"
+                                           OnClick="FormatRequestBody"
+                                           Disabled="string.IsNullOrWhiteSpace(_requestBody)">
+                                    Format
+                                </MudButton>
+                                <MudButton Variant="Variant.Text"
+                                           Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.ContentPaste"
+                                           OnClick="PasteFromClipboard">
+                                    Paste
+                                </MudButton>
+                            </MudStack>
+                        </MudStack>
+                        <MudTextField @bind-Value="_requestBody"
+                                      Variant="Variant.Outlined"
+                                      Lines="10"
+                                      Placeholder='{"key": "value"}'
+                                      Style="font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem;"
+                                      Class="json-editor" />
+                    </MudStack>
+                }
+
+                @* Custom Headers Section *@
+                <MudExpansionPanel Text="Custom Headers" IsInitiallyExpanded="@(_customHeaders.Any())">
+                    <TitleContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Style="width: 100%;">
+                            <MudText>Custom Headers</MudText>
+                            @if (_customHeaders.Any())
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info">@_customHeaders.Count</MudChip>
+                            }
+                        </MudStack>
+                    </TitleContent>
+                    <ChildContent>
+                        <MudStack Spacing="2" Class="mt-2">
+                            @foreach (var header in _customHeaders)
+                            {
+                                var headerIndex = _customHeaders.IndexOf(header);
+                                <MudGrid Spacing="1">
+                                    <MudItem xs="5">
+                                        <MudTextField @bind-Value="header.Key"
+                                                      Label="Header Name"
+                                                      Variant="Variant.Outlined"
+                                                      Dense="true"
+                                                      Placeholder="Content-Type" />
+                                    </MudItem>
+                                    <MudItem xs="6">
+                                        <MudTextField @bind-Value="header.Value"
+                                                      Label="Header Value"
+                                                      Variant="Variant.Outlined"
+                                                      Dense="true"
+                                                      Placeholder="application/json" />
+                                    </MudItem>
+                                    <MudItem xs="1" Class="d-flex align-center">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="@(() => RemoveHeader(headerIndex))"
+                                                       Title="Remove header" />
+                                    </MudItem>
+                                </MudGrid>
+                            }
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       OnClick="AddHeader"
+                                       Size="Size.Small">
+                                Add Header
+                            </MudButton>
+                        </MudStack>
+                    </ChildContent>
+                </MudExpansionPanel>
+
+                @* Action Buttons *@
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow"
+                                   OnClick="SendRequestAsync"
+                                   Disabled="_isTesting || string.IsNullOrEmpty(_endpointUrl)"
+                                   Size="Size.Large">
+                            @if (_isTesting)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Sending...</span>
+                            }
+                            else
+                            {
+                                <span>Send Request</span>
+                            }
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Default"
+                                   StartIcon="@Icons.Material.Filled.Clear"
+                                   OnClick="ClearForm">
+                            Clear
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+            </MudStack>
+
+            @* Loading Indicator *@
+            @if (_isTesting)
+            {
+                <MudDivider Class="my-4" />
+                <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Sending request to @_endpointUrl...</MudText>
+                </MudStack>
+            }
+
+            @* Network Error Alert *@
+            @if (!string.IsNullOrEmpty(_networkError))
+            {
+                <MudDivider Class="my-4" />
+                <MudAlert Severity="Severity.Error" Class="mb-3" Variant="Variant.Filled" ShowCloseIcon="true" CloseIconClicked="@(() => _networkError = null)">
+                    <MudText Typo="Typo.subtitle2"><strong>Network Error</strong></MudText>
+                    <MudText Typo="Typo.body2">@_networkError</MudText>
+                </MudAlert>
+            }
+
+            @* Results Section *@
+            @if (_testResult != null && !_isTesting)
+            {
+                <MudDivider Class="my-4" />
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">
+                        <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
+                        Response
+                    </MudText>
+                    <MudStack Row="true" Spacing="1">
+                        <MudButton Variant="Variant.Text"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.ContentCopy"
+                                   OnClick="CopyResponseToClipboard"
+                                   Disabled="string.IsNullOrEmpty(_testResult.ResponseContent)">
+                            Copy Response
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+
+                @* Result Summary *@
+                <MudPaper Elevation="1" Class="pa-3 mb-3">
+                    <MudGrid>
+                        <MudItem xs="6" sm="3">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Status Code</MudText>
+                                <MudChip T="string" Size="Size.Medium"
+                                         Color="@GetStatusCodeColor((int)_testResult.StatusCode)"
+                                         Variant="Variant.Filled">
+                                    @((int)_testResult.StatusCode) @GetStatusCodeText(_testResult.StatusCode)
+                                </MudChip>
+                            </MudStack>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Response Time</MudText>
+                                <MudText Typo="Typo.subtitle1" Color="@GetResponseTimeColor(_testResult.ResponseTimeMs)">
+                                    <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Class="mr-1" />
+                                    @_testResult.ResponseTimeMs ms
+                                </MudText>
+                            </MudStack>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Response Size</MudText>
+                                <MudText Typo="Typo.subtitle1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Class="mr-1" />
+                                    @FormatBytes(_testResult.ResponseSizeBytes)
+                                </MudText>
+                            </MudStack>
+                        </MudItem>
+                        <MudItem xs="6" sm="3">
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Tested At</MudText>
+                                <MudText Typo="Typo.body2">@_testResult.TestedAt.ToLocalTime().ToString("HH:mm:ss.fff")</MudText>
+                            </MudStack>
+                        </MudItem>
+                    </MudGrid>
+                </MudPaper>
+
+                @* Error Message *@
+                @if (!string.IsNullOrEmpty(_testResult.ErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-3" Variant="Variant.Outlined">
+                        <MudText Typo="Typo.subtitle2"><strong>Error</strong></MudText>
+                        <MudText Typo="Typo.body2">@_testResult.ErrorMessage</MudText>
+                        @if (!string.IsNullOrEmpty(_testResult.ExceptionDetails))
+                        {
+                            <MudExpansionPanel Text="Exception Details" Dense="true" Class="mt-2">
+                                <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; font-size: 0.75rem;">@_testResult.ExceptionDetails</pre>
+                            </MudExpansionPanel>
+                        }
+                    </MudAlert>
+                }
+
+                @* Response Headers (Collapsible) *@
+                @if (_responseHeaders.Any())
+                {
+                    <MudExpansionPanel Text="Response Headers" Dense="true" Class="mb-3">
+                        <TitleContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Style="width: 100%;">
+                                <MudText>Response Headers</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@_responseHeaders.Count</MudChip>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 30%;">Header</th>
+                                        <th>Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var header in _responseHeaders)
+                                    {
+                                        <tr>
+                                            <td><code>@header.Key</code></td>
+                                            <td style="word-break: break-all;">@header.Value</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </ChildContent>
+                    </MudExpansionPanel>
+                }
+
+                @* Response Body *@
+                @if (!string.IsNullOrEmpty(_testResult.ResponseContent))
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Response Body</MudText>
+                    <MudPaper Elevation="0" Class="pa-3 response-body" Style="background-color: var(--mud-palette-background-grey); max-height: 400px; overflow-y: auto; border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                        <pre class="json-syntax">@FormatJson(_testResult.ResponseContent)</pre>
+                    </MudPaper>
+                }
+                else if (_testResult.Success)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                        <MudText Typo="Typo.body2">No response body returned.</MudText>
+                    </MudAlert>
+                }
+            }
+            else if (!_hasTestedOnce && !_isTesting)
+            {
+                <MudDivider Class="my-4" />
+                <MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Lightbulb" Variant="Variant.Outlined">
+                    <MudText Typo="Typo.body2">
+                        Select an endpoint from the list or enter a URL manually, then click <strong>Send Request</strong> to see results.
+                    </MudText>
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<style>
+    .method-chip {
+        min-width: 60px;
+        justify-content: center;
+    }
+
+    .method-chip-large {
+        min-width: 80px;
+        justify-content: center;
+        font-weight: 600;
+    }
+
+    .endpoint-item-selected {
+        background-color: var(--mud-palette-action-default-hover);
+    }
+
+    .response-body {
+        border: 1px solid var(--mud-palette-lines-default);
+        border-radius: 4px;
+    }
+
+    pre {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    }
+
+    .json-editor textarea {
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace !important;
+        font-size: 0.85rem !important;
+    }
+
+    .json-syntax {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 0;
+        font-size: 0.85rem;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        line-height: 1.5;
+    }
+
+    /* JSON Syntax Highlighting Colors */
+    .json-key {
+        color: #9cdcfe;
+    }
+
+    .json-string {
+        color: #ce9178;
+    }
+
+    .json-number {
+        color: #b5cea8;
+    }
+
+    .json-boolean {
+        color: #569cd6;
+    }
+
+    .json-null {
+        color: #569cd6;
+    }
+
+    /* Response time color indicators */
+    .response-fast {
+        color: var(--mud-palette-success);
+    }
+
+    .response-medium {
+        color: var(--mud-palette-warning);
+    }
+
+    .response-slow {
+        color: var(--mud-palette-error);
+    }
+</style>
+
+@code {
+    // State
+    private bool _isLoading = true;
+    private bool _isTesting = false;
+    private bool _hasTestedOnce = false;
+    private string _errorMessage = string.Empty;
+    private string _searchText = string.Empty;
+    private string? _networkError = null;
+
+    // Endpoints
+    private List<EndpointInfo>? _endpoints;
+    private Dictionary<string, List<EndpointInfo>> _endpointsByCategory = new();
+    private EndpointInfo? _selectedEndpoint;
+
+    // Test Form
+    private string _selectedMethod = "GET";
+    private string _endpointUrl = string.Empty;
+    private string _requestBody = string.Empty;
+    private List<HeaderEntry> _customHeaders = new();
+
+    // Test Result
+    private EndpointTestResult? _testResult;
+    private Dictionary<string, string> _responseHeaders = new();
+
+    // Header Entry class for custom headers
+    private class HeaderEntry
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEndpointsAsync();
+    }
+
+    private async Task LoadEndpointsAsync()
+    {
+        _isLoading = true;
+        _errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await EndpointTestingService.GetAvailableEndpointsAsync();
+
+            if (result.IsSuccess && result.Value != null)
+            {
+                _endpoints = result.Value;
+
+                // Group by category with ordering
+                _endpointsByCategory = _endpoints
+                    .GroupBy(e => string.IsNullOrEmpty(e.Category) ? "Other" : e.Category)
+                    .OrderBy(g => GetCategoryOrder(g.Key))
+                    .ThenBy(g => g.Key)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(e => e.Path).ToList());
+
+                Logger.LogInformation("Loaded {Count} endpoints in {Categories} categories",
+                    _endpoints.Count, _endpointsByCategory.Count);
+            }
+            else
+            {
+                _errorMessage = result.Message ?? "Failed to load endpoints";
+                Logger.LogError("Failed to load endpoints: {Error}", _errorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading endpoints");
+            _errorMessage = $"Error loading endpoints: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private List<EndpointInfo> GetFilteredEndpoints(List<EndpointInfo> endpoints)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+            return endpoints;
+
+        var search = _searchText.ToLower();
+        return endpoints.Where(e =>
+            e.Path.ToLower().Contains(search) ||
+            e.Name.ToLower().Contains(search) ||
+            e.Description.ToLower().Contains(search) ||
+            e.Method.Method.ToLower().Contains(search) ||
+            e.Tags.Any(t => t.ToLower().Contains(search))
+        ).ToList();
+    }
+
+    private bool ShouldExpandCategory(string category)
+    {
+        // Expand first category by default, or all when searching
+        if (!string.IsNullOrEmpty(_searchText))
+            return true;
+
+        return category == _endpointsByCategory.Keys.FirstOrDefault();
+    }
+
+    private void SelectEndpoint(EndpointInfo endpoint)
+    {
+        _selectedEndpoint = endpoint;
+        _endpointUrl = endpoint.Path;
+        _selectedMethod = endpoint.Method.Method.ToUpper();
+        _requestBody = endpoint.RequestBody ?? string.Empty;
+
+        // Copy endpoint headers to custom headers
+        _customHeaders.Clear();
+        if (endpoint.Headers?.Any() == true)
+        {
+            foreach (var header in endpoint.Headers)
+            {
+                _customHeaders.Add(new HeaderEntry { Key = header.Key, Value = header.Value });
+            }
+        }
+
+        // Clear previous result when selecting new endpoint
+        _testResult = null;
+        _responseHeaders.Clear();
+        _networkError = null;
+
+        Logger.LogInformation("Selected endpoint: {Method} {Path}", _selectedMethod, _endpointUrl);
+    }
+
+    private void ClearSelectedEndpoint()
+    {
+        _selectedEndpoint = null;
+    }
+
+    private async Task SendRequestAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_endpointUrl))
+            return;
+
+        _isTesting = true;
+        _hasTestedOnce = true;
+        _networkError = null;
+        _responseHeaders.Clear();
+        StateHasChanged();
+
+        try
+        {
+            Logger.LogInformation("Sending request: {Method} {Url}", _selectedMethod, _endpointUrl);
+
+            // Build endpoint info with custom headers
+            var endpointInfo = new EndpointInfo
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = $"{_selectedMethod} {_endpointUrl}",
+                Url = _endpointUrl,
+                Path = _endpointUrl,
+                Method = _selectedMethod.ToUpper() switch
+                {
+                    "POST" => HttpMethod.Post,
+                    "PUT" => HttpMethod.Put,
+                    "PATCH" => HttpMethod.Patch,
+                    "DELETE" => HttpMethod.Delete,
+                    _ => HttpMethod.Get
+                },
+                Category = "Manual Test",
+                Controller = "Manual",
+                IsEnabled = true,
+                ExpectedStatusCode = 200,
+                ExpectedResponseTimeMs = 3000,
+                RequestBody = (_selectedMethod == "POST" || _selectedMethod == "PUT" || _selectedMethod == "PATCH")
+                    ? _requestBody
+                    : null
+            };
+
+            // Add custom headers
+            foreach (var header in _customHeaders.Where(h => !string.IsNullOrWhiteSpace(h.Key)))
+            {
+                endpointInfo.Headers[header.Key] = header.Value;
+            }
+
+            var result = await EndpointTestingService.TestEndpointAsync(endpointInfo);
+
+            if (result.IsSuccess && result.Value != null)
+            {
+                _testResult = result.Value;
+
+                // Parse response headers from context if available
+                if (_testResult.Context?.TryGetValue("ResponseHeaders", out var headersObj) == true
+                    && headersObj is Dictionary<string, string> headers)
+                {
+                    _responseHeaders = headers;
+                }
+
+                Logger.LogInformation("Request completed: {StatusCode} in {Time}ms",
+                    (int)_testResult.StatusCode, _testResult.ResponseTimeMs);
+
+                // Show snackbar notification
+                var severity = _testResult.Success ? Severity.Success : Severity.Warning;
+                Snackbar.Add($"Request completed: {(int)_testResult.StatusCode} in {_testResult.ResponseTimeMs}ms", severity);
+            }
+            else
+            {
+                _testResult = new EndpointTestResult
+                {
+                    Success = false,
+                    ErrorMessage = result.Message ?? "Unknown error occurred",
+                    EndpointUrl = _endpointUrl,
+                    HttpMethod = _selectedMethod,
+                    TestedAt = DateTime.UtcNow
+                };
+                Snackbar.Add($"Request failed: {result.Message}", Severity.Error);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.LogError(ex, "Network error testing endpoint");
+            _networkError = $"Network error: {ex.Message}. Please check if the API is running and accessible.";
+            _testResult = null;
+            Snackbar.Add("Network error occurred", Severity.Error);
+        }
+        catch (TaskCanceledException ex)
+        {
+            Logger.LogError(ex, "Request timeout");
+            _networkError = "Request timed out. The server took too long to respond.";
+            _testResult = null;
+            Snackbar.Add("Request timed out", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error testing endpoint");
+            _testResult = new EndpointTestResult
+            {
+                Success = false,
+                ErrorMessage = ex.Message,
+                ExceptionDetails = ex.ToString(),
+                EndpointUrl = _endpointUrl,
+                HttpMethod = _selectedMethod,
+                TestedAt = DateTime.UtcNow
+            };
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isTesting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearForm()
+    {
+        _selectedEndpoint = null;
+        _endpointUrl = string.Empty;
+        _selectedMethod = "GET";
+        _requestBody = string.Empty;
+        _customHeaders.Clear();
+        _testResult = null;
+        _responseHeaders.Clear();
+        _networkError = null;
+    }
+
+    private void AddHeader()
+    {
+        _customHeaders.Add(new HeaderEntry());
+    }
+
+    private void RemoveHeader(int index)
+    {
+        if (index >= 0 && index < _customHeaders.Count)
+        {
+            _customHeaders.RemoveAt(index);
+        }
+    }
+
+    private void FormatRequestBody()
+    {
+        if (!string.IsNullOrWhiteSpace(_requestBody))
+        {
+            _requestBody = FormatJson(_requestBody);
+        }
+    }
+
+    private async Task PasteFromClipboard()
+    {
+        try
+        {
+            var clipboardText = await JSRuntime.InvokeAsync<string>("navigator.clipboard.readText");
+            if (!string.IsNullOrEmpty(clipboardText))
+            {
+                _requestBody = FormatJson(clipboardText);
+                Snackbar.Add("Pasted from clipboard", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to paste from clipboard");
+            Snackbar.Add("Failed to access clipboard", Severity.Warning);
+        }
+    }
+
+    private async Task CopyResponseToClipboard()
+    {
+        if (_testResult?.ResponseContent != null)
+        {
+            try
+            {
+                var formattedJson = FormatJson(_testResult.ResponseContent);
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", formattedJson);
+                Snackbar.Add("Response copied to clipboard", Severity.Success);
+                Logger.LogInformation("Response copied to clipboard");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to copy to clipboard");
+                Snackbar.Add("Failed to copy to clipboard", Severity.Warning);
+            }
+        }
+    }
+
+    private static Color GetMethodColor(string method) => method.ToLower() switch
+    {
+        "get" => Color.Success,
+        "post" => Color.Primary,
+        "put" => Color.Warning,
+        "patch" => Color.Info,
+        "delete" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color GetStatusCodeColor(int statusCode)
+    {
+        if (statusCode >= 200 && statusCode < 300) return Color.Success;
+        if (statusCode >= 300 && statusCode < 400) return Color.Warning;
+        if (statusCode >= 400) return Color.Error;
+        return Color.Default;
+    }
+
+    private static string GetStatusCodeText(System.Net.HttpStatusCode statusCode)
+    {
+        return statusCode.ToString();
+    }
+
+    private static Color GetResponseTimeColor(long responseTimeMs)
+    {
+        if (responseTimeMs < 500) return Color.Success;
+        if (responseTimeMs < 2000) return Color.Warning;
+        return Color.Error;
+    }
+
+    private static int GetCategoryOrder(string category) => category switch
+    {
+        "Stock Transactions" => 1,
+        "Sales Transactions" => 2,
+        "Purchasing Transactions" => 3,
+        "Configuration" => 4,
+        "Object Master Data" => 5,
+        "External/SAP Integration" => 6,
+        _ => 99
+    };
+
+    private string GetEndpointItemClass(EndpointInfo endpoint)
+    {
+        return _selectedEndpoint?.Id == endpoint.Id ? "endpoint-item-selected" : string.Empty;
+    }
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        if (text.Length <= maxLength) return text;
+
+        return text.Substring(0, maxLength) + "...";
+    }
+
+    private static string FormatJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return json;
+
+        try
+        {
+            var parsed = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(parsed.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            // If it's not valid JSON, return as-is
+            return json;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes == 0) return "0 B";
+
+        string[] sizes = new[] { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+        int maxOrder = sizes.Length - 1;
+
+        while (size >= 1024 && order < maxOrder)
+        {
+            order++;
+            size = size / 1024;
+        }
+
+        return string.Format("{0:0.##} {1}", size, sizes[order]);
+    }
+}

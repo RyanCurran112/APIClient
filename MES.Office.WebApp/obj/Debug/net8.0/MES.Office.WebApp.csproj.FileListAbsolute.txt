@@ -1,0 +1,10 @@
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.csproj.AssemblyReference.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\rpswa.dswa.cache.json
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.GeneratedMSBuildEditorConfig.editorconfig
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.AssemblyInfoInputs.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.AssemblyInfo.cs
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.csproj.CoreCompileInputs.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.MvcApplicationPartsAssemblyInfo.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.RazorAssemblyInfo.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.RazorAssemblyInfo.cs
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.WebApp\obj\Debug\net8.0\MES.Office.WebApp.sourcelink.json

@@ -1,0 +1,60 @@
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudAlert Severity="@AlertSeverity" Variant="Variant.Outlined">
+                <MudText Typo="Typo.body1">@ContentText</MudText>
+            </MudAlert>
+
+            @if (!string.IsNullOrEmpty(AdditionalInfo))
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @AdditionalInfo
+                </MudText>
+            }
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton OnClick="Confirm"
+                   Color="@ConfirmButtonColor"
+                   Variant="Variant.Filled">
+            @ConfirmButtonText
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string Title { get; set; } = "Confirm Operation";
+
+    [Parameter]
+    public string ContentText { get; set; } = "Are you sure you want to proceed?";
+
+    [Parameter]
+    public string? AdditionalInfo { get; set; }
+
+    [Parameter]
+    public string ConfirmButtonText { get; set; } = "Confirm";
+
+    [Parameter]
+    public Color ConfirmButtonColor { get; set; } = Color.Primary;
+
+    [Parameter]
+    public Severity AlertSeverity { get; set; } = Severity.Info;
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+
+    private void Confirm()
+    {
+        MudDialog?.Close(DialogResult.Ok(true));
+    }
+}

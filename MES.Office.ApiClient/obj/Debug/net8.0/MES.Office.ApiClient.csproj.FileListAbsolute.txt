@@ -1,0 +1,5 @@
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Debug\net8.0\MES.Office.ApiClient.GeneratedMSBuildEditorConfig.editorconfig
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Debug\net8.0\MES.Office.ApiClient.AssemblyInfoInputs.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Debug\net8.0\MES.Office.ApiClient.AssemblyInfo.cs
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Debug\net8.0\MES.Office.ApiClient.csproj.CoreCompileInputs.cache
+D:\GitHub\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Debug\net8.0\MES.Office.ApiClient.sourcelink.json

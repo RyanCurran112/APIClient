@@ -1,0 +1,83 @@
+@{
+    // Validation scripts partial - provides client-side validation helpers
+}
+<script>
+    // Client-side validation helpers
+    (function() {
+        'use strict';
+
+        // Validation helper functions
+        window.Validation = {
+            isRequired: function(value) {
+                return value !== null && value !== undefined && value.toString().trim() !== '';
+            },
+
+            isNumber: function(value) {
+                return !isNaN(parseFloat(value)) && isFinite(value);
+            },
+
+            isEmail: function(value) {
+                const emailRegex = /^[^\s@@]+@@[^\s@@]+\.[^\s@@]+$/;
+                return emailRegex.test(value);
+            },
+
+            isUrl: function(value) {
+                try {
+                    new URL(value);
+                    return true;
+                } catch {
+                    return false;
+                }
+            },
+
+            minLength: function(value, min) {
+                return value.toString().length >= min;
+            },
+
+            maxLength: function(value, max) {
+                return value.toString().length <= max;
+            },
+
+            validateForm: function(formId) {
+                const form = document.getElementById(formId);
+                if (!form) return false;
+
+                let isValid = true;
+                const inputs = form.querySelectorAll('[data-required="true"]');
+
+                inputs.forEach(input => {
+                    if (!this.isRequired(input.value)) {
+                        this.showError(input, 'This field is required');
+                        isValid = false;
+                    } else {
+                        this.clearError(input);
+                    }
+                });
+
+                return isValid;
+            },
+
+            showError: function(element, message) {
+                this.clearError(element);
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'validation-error';
+                errorDiv.style.color = '#dc3545';
+                errorDiv.style.fontSize = '0.875rem';
+                errorDiv.style.marginTop = '0.25rem';
+                errorDiv.textContent = message;
+
+                element.classList.add('is-invalid');
+                element.parentNode.appendChild(errorDiv);
+            },
+
+            clearError: function(element) {
+                element.classList.remove('is-invalid');
+                const errorDiv = element.parentNode.querySelector('.validation-error');
+                if (errorDiv) {
+                    errorDiv.remove();
+                }
+            }
+        };
+    })();
+</script>

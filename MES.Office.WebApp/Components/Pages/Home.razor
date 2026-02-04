@@ -1,0 +1,532 @@
+@page "/"
+@rendermode InteractiveServer
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Seeding
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Testing
+@using MES.Office.WebApp.Components.Pages.Dashboard
+@inject ISeeding_Service SeedingService
+@inject IEndpointTesting_Service EndpointTestingService
+@inject IConfiguration Configuration
+@inject NavigationManager Navigation
+@inject ILogger<Home> Logger
+
+<PageTitle>Dashboard - MES Office WebApp</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">MES Office WebApp Dashboard</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">@DateTime.Now.ToString("dddd, MMMM dd, yyyy HH:mm")</MudText>
+
+@* API Health Panel *@
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <div class="d-flex justify-space-between align-center mb-3">
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.HealthAndSafety" Color="@GetHealthColor()" Class="mr-2" />
+            <MudText Typo="Typo.h6">API Connection Status</MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined"
+                   Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh"
+                   OnClick="CheckApiHealthAsync"
+                   Disabled="@_isCheckingHealth">
+            @if (_isCheckingHealth)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                <span>Checking...</span>
+            }
+            else
+            {
+                <span>Refresh</span>
+            }
+        </MudButton>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center">
+                <MudChip T="string"
+                         Color="@GetHealthColor()"
+                         Size="Size.Medium"
+                         Icon="@GetHealthIcon()">
+                    @_healthStatus
+                </MudChip>
+            </div>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">API URL</MudText>
+            <MudText Typo="Typo.body1">@_apiBaseUrl</MudText>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Response Time</MudText>
+            <MudText Typo="Typo.body1">
+                @if (_responseTimeMs.HasValue)
+                {
+                    <span>@_responseTimeMs.Value ms</span>
+                    @if (_responseTimeMs.Value < 100)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Bolt" Color="Color.Success" Size="Size.Small" Class="ml-1" />
+                    }
+                    else if (_responseTimeMs.Value < 500)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Warning" Size="Size.Small" Class="ml-1" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.SlowMotionVideo" Color="Color.Error" Size="Size.Small" Class="ml-1" />
+                    }
+                }
+                else
+                {
+                    <span>--</span>
+                }
+            </MudText>
+        </MudItem>
+    </MudGrid>
+
+    @if (!string.IsNullOrEmpty(_healthError))
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-3" Dense="true">
+            @_healthError
+        </MudAlert>
+    }
+</MudPaper>
+
+@* Endpoint Health Matrix *@
+<EndpointHealthMatrix />
+
+@* Statistics Cards *@
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center">
+                    <div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Total Entities</MudText>
+                        <MudText Typo="Typo.h4">@_totalEntityCount</MudText>
+                    </div>
+                    <MudAvatar Color="Color.Primary" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Category" />
+                    </MudAvatar>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center">
+                    <div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Records Seeded</MudText>
+                        <MudText Typo="Typo.h4">@(_seedingStatus?.TotalRecords.ToString("N0") ?? "--")</MudText>
+                    </div>
+                    <MudAvatar Color="Color.Success" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" />
+                    </MudAvatar>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center">
+                    <div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">API Endpoints</MudText>
+                        <MudText Typo="Typo.h4">@_endpointCount</MudText>
+                    </div>
+                    <MudAvatar Color="Color.Info" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Api" />
+                    </MudAvatar>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center">
+                    <div>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Database</MudText>
+                        <MudText Typo="Typo.h6" Style="word-break: break-all;">@(_seedingStatus?.DatabaseName ?? "--")</MudText>
+                    </div>
+                    <MudAvatar Color="Color.Secondary" Size="Size.Large">
+                        <MudIcon Icon="@Icons.Material.Filled.Dns" />
+                    </MudAvatar>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@* Quick Actions *@
+<MudText Typo="Typo.h5" Class="mb-3">Quick Actions</MudText>
+<MudGrid Class="mb-4">
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="2" Class="h-100">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Primary">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Data Seeding</MudText>
+                    <MudText Typo="Typo.body2">Seed test data to API</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>Seed entities via the API to populate your development database with test data.</MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/seed" StartIcon="@Icons.Material.Filled.PlayArrow">
+                    Go to Seeding
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="2" Class="h-100">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.BugReport" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">API Testing</MudText>
+                    <MudText Typo="Typo.body2">Test API endpoints</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>Test API endpoints to verify functionality and review responses.</MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" Href="/testing" StartIcon="@Icons.Material.Filled.PlayArrow">
+                    Go to Testing
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudCard Elevation="2" Class="h-100">
+            <MudCardHeader>
+                <CardHeaderAvatar>
+                    <MudAvatar Color="Color.Info">
+                        <MudIcon Icon="@Icons.Material.Filled.List" />
+                    </MudAvatar>
+                </CardHeaderAvatar>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">View Endpoints</MudText>
+                    <MudText Typo="Typo.body2">Browse all API endpoints</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText>Browse all available API endpoints and their documentation.</MudText>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Info" Href="/testing" StartIcon="@Icons.Material.Filled.OpenInNew">
+                    View Endpoints
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@* Category Breakdown *@
+<MudText Typo="Typo.h5" Class="mb-3">Entity Categories</MudText>
+<MudGrid Class="mb-4">
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2" Style="border-left: 4px solid var(--mud-palette-primary);">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <MudText Typo="Typo.h6">Configuration</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.Settings" Color="Color.Primary" />
+                </div>
+                <MudText Typo="Typo.h4" Color="Color.Primary">@_configurationCount</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@((_seedingStatus?.ConfigurationStatus?.TotalRecords ?? 0).ToString("N0")) records</MudText>
+                <MudDivider Class="my-2" />
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           Href="/seed"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">
+                    Seed Category
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2" Style="border-left: 4px solid var(--mud-palette-secondary);">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <MudText Typo="Typo.h6">System</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.Computer" Color="Color.Secondary" />
+                </div>
+                <MudText Typo="Typo.h4" Color="Color.Secondary">@_systemCount</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">system entities</MudText>
+                <MudDivider Class="my-2" />
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Secondary"
+                           Size="Size.Small"
+                           Href="/seed"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">
+                    Seed Category
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2" Style="border-left: 4px solid var(--mud-palette-success);">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <MudText Typo="Typo.h6">Objects</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" Color="Color.Success" />
+                </div>
+                <MudText Typo="Typo.h4" Color="Color.Success">@_objectsCount</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@((_seedingStatus?.MasterDataStatus?.TotalRecords ?? 0).ToString("N0")) records</MudText>
+                <MudDivider Class="my-2" />
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Success"
+                           Size="Size.Small"
+                           Href="/seed"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">
+                    Seed Category
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudCard Elevation="2" Style="border-left: 4px solid var(--mud-palette-warning);">
+            <MudCardContent>
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <MudText Typo="Typo.h6">Transactions</MudText>
+                    <MudIcon Icon="@Icons.Material.Filled.Receipt" Color="Color.Warning" />
+                </div>
+                <MudText Typo="Typo.h4" Color="Color.Warning">@_transactionsCount</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@((_seedingStatus?.TransactionStatus?.TotalRecords ?? 0).ToString("N0")) records</MudText>
+                <MudDivider Class="my-2" />
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Warning"
+                           Size="Size.Small"
+                           Href="/seed"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">
+                    Seed Category
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@* Quick Seed Actions *@
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudText Typo="Typo.h6" Class="mb-3">
+        <MudIcon Icon="@Icons.Material.Filled.Bolt" Class="mr-2" />
+        Quick Seed Actions
+    </MudText>
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.Foundation"
+                       Href="/seed"
+                       Class="mb-2">
+                Seed Foundational Data
+            </MudButton>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Seeds Configuration and System entities required for basic functionality.
+            </MudText>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Success"
+                       FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                       Href="/seed"
+                       Class="mb-2">
+                Seed All Entities
+            </MudButton>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Seeds all entity types in dependency order (Configuration, System, Objects, Transactions).
+            </MudText>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@* Entity Summary Grid *@
+<MudText Typo="Typo.h5" Class="mb-3">Entity Status Overview</MudText>
+<div class="mb-4">
+    <EntitySummaryGrid />
+</div>
+
+@* Information Alert *@
+<MudAlert Severity="Severity.Info" Class="mt-4">
+    <MudText Typo="Typo.body2">
+        <strong>Note:</strong> This WebApp communicates with the MES Office API at <code>@_apiBaseUrl</code>.
+        Make sure the API is running before performing any operations. The API URL is configured in <code>appsettings.json</code>.
+    </MudText>
+</MudAlert>
+
+@code {
+    // API Health State
+    private string _apiBaseUrl = string.Empty;
+    private string _healthStatus = "Unknown";
+    private string _healthError = string.Empty;
+    private long? _responseTimeMs;
+    private bool _isCheckingHealth = false;
+    private bool _isApiHealthy = false;
+
+    // Entity Statistics
+    private int _totalEntityCount = 0;
+    private int _configurationCount = 2;  // From SeedIndexModel
+    private int _systemCount = 7;         // From SeedIndexModel
+    private int _objectsCount = 24;       // From SeedIndexModel
+    private int _transactionsCount = 21;  // From SeedIndexModel
+    private int _endpointCount = 0;
+
+    // Seeding Status
+    private SeedingStatus? _seedingStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiBaseUrl = Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:7272";
+        _totalEntityCount = _configurationCount + _systemCount + _objectsCount + _transactionsCount;
+
+        await LoadDashboardDataAsync();
+    }
+
+    private async Task LoadDashboardDataAsync()
+    {
+        // Run all data loading tasks in parallel
+        var healthTask = CheckApiHealthAsync();
+        var seedingStatusTask = LoadSeedingStatusAsync();
+        var endpointCountTask = LoadEndpointCountAsync();
+
+        await Task.WhenAll(healthTask, seedingStatusTask, endpointCountTask);
+    }
+
+    private async Task CheckApiHealthAsync()
+    {
+        _isCheckingHealth = true;
+        _healthError = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            // Use the endpoint testing service to check health
+            var result = await EndpointTestingService.GetHealthStatusAsync();
+
+            stopwatch.Stop();
+            _responseTimeMs = stopwatch.ElapsedMilliseconds;
+
+            if (result.IsSuccess)
+            {
+                var healthStatus = result.Value;
+                _isApiHealthy = healthStatus.OverallStatus == "Healthy";
+                _healthStatus = healthStatus.OverallStatus;
+
+                if (healthStatus.Issues?.Any() == true)
+                {
+                    _healthError = string.Join("; ", healthStatus.Issues.Take(3));
+                }
+            }
+            else
+            {
+                _isApiHealthy = false;
+                _healthStatus = "Error";
+                _healthError = result.Message ?? "Failed to check API health";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _isApiHealthy = false;
+            _healthStatus = "Offline";
+            _healthError = $"Cannot connect to API: {ex.Message}";
+            Logger.LogWarning(ex, "API health check failed - connection error");
+        }
+        catch (TaskCanceledException)
+        {
+            _isApiHealthy = false;
+            _healthStatus = "Timeout";
+            _healthError = "API health check timed out";
+            Logger.LogWarning("API health check timed out");
+        }
+        catch (Exception ex)
+        {
+            _isApiHealthy = false;
+            _healthStatus = "Error";
+            _healthError = $"Unexpected error: {ex.Message}";
+            Logger.LogError(ex, "Unexpected error during API health check");
+        }
+        finally
+        {
+            _isCheckingHealth = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadSeedingStatusAsync()
+    {
+        try
+        {
+            var result = await SeedingService.GetSeedingStatusAsync();
+            if (result.IsSuccess)
+            {
+                _seedingStatus = result.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load seeding status");
+        }
+    }
+
+    private async Task LoadEndpointCountAsync()
+    {
+        try
+        {
+            var result = await EndpointTestingService.GetAllEndpointsAsync();
+            if (result.IsSuccess)
+            {
+                _endpointCount = result.Value?.Count ?? 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load endpoint count");
+        }
+    }
+
+    private Color GetHealthColor()
+    {
+        return _healthStatus switch
+        {
+            "Healthy" => Color.Success,
+            "Degraded" => Color.Warning,
+            "Offline" => Color.Error,
+            "Timeout" => Color.Error,
+            "Error" => Color.Error,
+            _ => Color.Default
+        };
+    }
+
+    private string GetHealthIcon()
+    {
+        return _healthStatus switch
+        {
+            "Healthy" => Icons.Material.Filled.CheckCircle,
+            "Degraded" => Icons.Material.Filled.Warning,
+            "Offline" => Icons.Material.Filled.CloudOff,
+            "Timeout" => Icons.Material.Filled.HourglassEmpty,
+            "Error" => Icons.Material.Filled.Error,
+            _ => Icons.Material.Filled.Help
+        };
+    }
+}

@@ -1,0 +1,133 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+<MudThemeProvider @ref="_mudThemeProvider" @bind-IsDarkMode="@_isDarkMode" Theme="@AppTheme.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudTooltip Text="Toggle navigation menu">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           Color="Color.Inherit"
+                           Edge="Edge.Start"
+                           OnClick="@ToggleDrawer" />
+        </MudTooltip>
+
+        <MudText Typo="Typo.h6" Class="ml-3">MES Office WebApp</MudText>
+
+        <MudChip T="string"
+                 Size="Size.Small"
+                 Color="Color.Primary"
+                 Variant="Variant.Outlined"
+                 Icon="@Icons.Material.Filled.Build"
+                 Class="ml-4">
+            Admin Tool
+        </MudChip>
+
+        <MudSpacer />
+
+        <MudText Typo="Typo.body2" Class="mr-4 d-none d-sm-flex">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarToday" Size="Size.Small" Class="mr-1" />
+            @DateTime.Now.ToString("MMM dd, yyyy HH:mm")
+        </MudText>
+
+        <MudTooltip Text="Refresh page">
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                           Color="Color.Inherit"
+                           OnClick="@RefreshPage" />
+        </MudTooltip>
+
+        <MudTooltip Text="@(_isDarkMode ? "Switch to light mode" : "Switch to dark mode")">
+            <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                           Color="Color.Inherit"
+                           OnClick="@ToggleDarkMode" />
+        </MudTooltip>
+
+        <MudMenu Icon="@Icons.Material.Filled.Settings"
+                 Color="Color.Inherit"
+                 Dense="true"
+                 AnchorOrigin="Origin.BottomRight"
+                 TransformOrigin="Origin.TopRight">
+            <MudMenuItem Icon="@Icons.Material.Filled.Info" Href="/about">About</MudMenuItem>
+            <MudMenuItem Icon="@Icons.Material.Filled.Help" Href="/help">Help</MudMenuItem>
+            <MudDivider />
+            <MudMenuItem Icon="@Icons.Material.Filled.Code" Href="/test/endpoints">API Endpoints</MudMenuItem>
+        </MudMenu>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen"
+               ClipMode="DrawerClipMode.Always"
+               Elevation="1"
+               Variant="@DrawerVariant.Responsive"
+               Breakpoint="Breakpoint.Md">
+        <MudDrawerHeader Class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Navigation</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="pt-16">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = false;
+    private MudThemeProvider? _mudThemeProvider;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Check system preference for dark mode
+            _isDarkMode = await _mudThemeProvider!.GetSystemDarkModeAsync();
+
+            // Try to load saved preference from localStorage
+            try
+            {
+                var savedPreference = await JS.InvokeAsync<string?>("localStorage.getItem", "mes-webapp-darkmode");
+                if (!string.IsNullOrEmpty(savedPreference))
+                {
+                    _isDarkMode = savedPreference == "true";
+                }
+            }
+            catch
+            {
+                // localStorage not available, use system preference
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+
+        // Save preference to localStorage
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "mes-webapp-darkmode", _isDarkMode.ToString().ToLower());
+        }
+        catch
+        {
+            // localStorage not available
+        }
+    }
+
+    private async Task RefreshPage()
+    {
+        await JS.InvokeVoidAsync("location.reload");
+    }
+}

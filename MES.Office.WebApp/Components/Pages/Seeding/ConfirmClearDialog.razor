@@ -1,0 +1,65 @@
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <MudText Typo="Typo.body1" Class="fw-bold">@ContentText</MudText>
+        </MudAlert>
+
+        <MudText Typo="Typo.body2" Class="mb-3">
+            To confirm this destructive action, please type <strong>@ConfirmationCode</strong> below:
+        </MudText>
+
+        <MudTextField @bind-Value="_userInput"
+                      Label="Confirmation Code"
+                      Variant="Variant.Outlined"
+                      Placeholder="@ConfirmationCode"
+                      FullWidth="true"
+                      Immediate="true" />
+
+        @if (!string.IsNullOrEmpty(_userInput) && _userInput != ConfirmationCode)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Error" Class="mt-2">
+                Confirmation code does not match
+            </MudText>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton OnClick="Submit"
+                   Color="Color.Error"
+                   Variant="Variant.Filled"
+                   Disabled="@(!IsConfirmed)">
+            Delete All Data
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public string ContentText { get; set; } = "Are you sure you want to delete all data?";
+
+    [Parameter]
+    public string ConfirmationCode { get; set; } = "DELETE_ALL_DATA";
+
+    private string _userInput = "";
+
+    private bool IsConfirmed => _userInput == ConfirmationCode;
+
+    private void Cancel()
+    {
+        MudDialog?.Cancel();
+    }
+
+    private void Submit()
+    {
+        if (IsConfirmed)
+        {
+            MudDialog?.Close(DialogResult.Ok(true));
+        }
+    }
+}

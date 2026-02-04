@@ -1,0 +1,629 @@
+@using MES.Office.Application.Interfaces.Services
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Testing
+@using MES.Office.WebApp.Components.Layout
+@using System.Net
+@implements IDisposable
+
+@inject IEndpointTesting_Service EndpointTestingService
+@inject NavigationManager Navigation
+@inject ILogger<EndpointHealthMatrix> Logger
+
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    <div class="d-flex justify-space-between align-center mb-3">
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.GridView" Color="Color.Primary" Class="mr-2" />
+            <MudText Typo="Typo.h6">Endpoint Health Matrix</MudText>
+        </div>
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+            @* Auto-refresh toggle *@
+            <MudSwitch T="bool" Value="_autoRefreshEnabled"
+                       ValueChanged="OnAutoRefreshToggled"
+                       Color="Color.Primary"
+                       Size="Size.Small"
+                       Label="Auto-refresh" />
+            @if (_autoRefreshEnabled)
+            {
+                <MudSelect T="int" Value="_refreshIntervalSeconds"
+                           ValueChanged="OnRefreshIntervalChanged"
+                           Variant="Variant.Outlined"
+                           Dense="true"
+                           Style="width: 100px;">
+                    <MudSelectItem T="int" Value="30">30s</MudSelectItem>
+                    <MudSelectItem T="int" Value="60">1m</MudSelectItem>
+                    <MudSelectItem T="int" Value="120">2m</MudSelectItem>
+                    <MudSelectItem T="int" Value="300">5m</MudSelectItem>
+                </MudSelect>
+            }
+            <MudButton Variant="Variant.Outlined"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RefreshHealthDataAsync"
+                       Disabled="@_isLoading">
+                @if (_isLoading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                    <span>Checking...</span>
+                }
+                else
+                {
+                    <span>Refresh</span>
+                }
+            </MudButton>
+        </MudStack>
+    </div>
+
+    @* Summary Stats Row *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetSummaryCardStyle("total")">
+                <MudText Typo="Typo.h4">@_totalEndpoints</MudText>
+                <MudText Typo="Typo.caption">Total Endpoints</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetSummaryCardStyle("healthy")">
+                <MudText Typo="Typo.h4" Style="color: #28BD98;">@_healthyCount</MudText>
+                <MudText Typo="Typo.caption">Healthy</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetSummaryCardStyle("warning")">
+                <MudText Typo="Typo.h4" Style="color: #F59E0B;">@_warningCount</MudText>
+                <MudText Typo="Typo.caption">Warning</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Elevation="1" Class="pa-3 text-center" Style="@GetSummaryCardStyle("error")">
+                <MudText Typo="Typo.h4" Style="color: #EF5350;">@_errorCount</MudText>
+                <MudText Typo="Typo.caption">Error</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* Loading State *@
+    @if (_isLoading && !_hasLoadedOnce)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+        <MudGrid>
+            @for (int i = 0; i < 4; i++)
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="120px" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <MudText>@_errorMessage</MudText>
+        </MudAlert>
+    }
+    else if (_endpointsByCategory?.Any() == true)
+    {
+        @* Legend *@
+        <MudStack Row="true" Spacing="3" Class="mb-3" Wrap="Wrap.Wrap">
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <div class="health-indicator health-healthy"></div>
+                <MudText Typo="Typo.caption">Healthy (2xx)</MudText>
+            </MudStack>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <div class="health-indicator health-warning"></div>
+                <MudText Typo="Typo.caption">Warning (3xx/Slow)</MudText>
+            </MudStack>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <div class="health-indicator health-error"></div>
+                <MudText Typo="Typo.caption">Error (4xx/5xx)</MudText>
+            </MudStack>
+            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                <div class="health-indicator health-untested"></div>
+                <MudText Typo="Typo.caption">Not Tested</MudText>
+            </MudStack>
+        </MudStack>
+
+        @* Health Matrix Grid - Categories as columns, HTTP Methods as rows *@
+        <div class="health-matrix-container">
+            <MudSimpleTable Dense="true" Hover="true" Bordered="true" Class="health-matrix-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Method</th>
+                        @foreach (var category in _endpointsByCategory.Keys)
+                        {
+                            <th style="text-align: center;">
+                                <MudText Typo="Typo.caption" Style="font-weight: 600;">@TruncateCategory(category)</MudText>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var method in _httpMethods)
+                    {
+                        <tr>
+                            <td>
+                                <MudChip T="string" Size="Size.Small" Color="@GetMethodColor(method)" Variant="Variant.Filled" Class="method-chip">
+                                    @method
+                                </MudChip>
+                            </td>
+                            @foreach (var category in _endpointsByCategory.Keys)
+                            {
+                                var endpoints = GetEndpointsForCell(category, method);
+                                <td style="text-align: center; padding: 4px;">
+                                    @if (endpoints.Any())
+                                    {
+                                        <div class="health-cell-container">
+                                            @foreach (var endpoint in endpoints.Take(6))
+                                            {
+                                                var status = GetEndpointHealthStatus(endpoint);
+                                                <MudTooltip Delay="200" Duration="300">
+                                                    <ChildContent>
+                                                        <div class="health-cell @GetHealthClass(status)"
+                                                             @onclick="() => NavigateToEndpoint(endpoint)">
+                                                        </div>
+                                                    </ChildContent>
+                                                    <TooltipContent>
+                                                        <MudStack Spacing="1">
+                                                            <MudText Typo="Typo.subtitle2">@endpoint.Name</MudText>
+                                                            <MudText Typo="Typo.caption"><code>@endpoint.Path</code></MudText>
+                                                            @if (_endpointResults.TryGetValue(endpoint.Id, out var result))
+                                                            {
+                                                                <MudDivider Class="my-1" />
+                                                                <MudText Typo="Typo.caption">
+                                                                    Status: <strong>@((int)result.StatusCode) @result.StatusCode</strong>
+                                                                </MudText>
+                                                                <MudText Typo="Typo.caption">
+                                                                    Response Time: <strong>@result.ResponseTimeMs ms</strong>
+                                                                </MudText>
+                                                                <MudText Typo="Typo.caption">
+                                                                    Tested: @result.TestedAt.ToString("HH:mm:ss")
+                                                                </MudText>
+                                                                @if (!string.IsNullOrEmpty(result.ErrorMessage))
+                                                                {
+                                                                    <MudText Typo="Typo.caption" Color="Color.Error">
+                                                                        Error: @TruncateText(result.ErrorMessage, 50)
+                                                                    </MudText>
+                                                                }
+                                                            }
+                                                            else
+                                                            {
+                                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Not tested yet</MudText>
+                                                            }
+                                                            <MudText Typo="Typo.caption" Class="mt-1" Color="Color.Primary">
+                                                                Click to test in Endpoint Browser
+                                                            </MudText>
+                                                        </MudStack>
+                                                    </TooltipContent>
+                                                </MudTooltip>
+                                            }
+                                            @if (endpoints.Count > 6)
+                                            {
+                                                <MudTooltip Text="@($"+{endpoints.Count - 6} more endpoints")">
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Class="more-chip">
+                                                        +@(endpoints.Count - 6)
+                                                    </MudChip>
+                                                </MudTooltip>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">-</MudText>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+
+        @* Last Checked Timestamp *@
+        @if (_lastChecked.HasValue)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                Last checked: @_lastChecked.Value.ToString("HH:mm:ss")
+                @if (_autoRefreshEnabled)
+                {
+                    <span> | Next refresh in @_secondsUntilRefresh seconds</span>
+                }
+            </MudText>
+        }
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info">
+            No endpoints available. Make sure the API is running.
+        </MudAlert>
+    }
+</MudPaper>
+
+<style>
+    .health-matrix-container {
+        overflow-x: auto;
+    }
+
+    .health-matrix-table th,
+    .health-matrix-table td {
+        white-space: nowrap;
+    }
+
+    .health-cell-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .health-cell {
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .health-cell:hover {
+        transform: scale(1.2);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .health-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+    }
+
+    .health-healthy {
+        background-color: #28BD98;
+    }
+
+    .health-warning {
+        background-color: #F59E0B;
+    }
+
+    .health-error {
+        background-color: #EF5350;
+    }
+
+    .health-untested {
+        background-color: #9CA3AF;
+    }
+
+    .method-chip {
+        min-width: 50px;
+        justify-content: center;
+    }
+
+    .more-chip {
+        font-size: 0.7rem;
+        padding: 0 4px;
+    }
+</style>
+
+@code {
+    // State
+    private bool _isLoading = false;
+    private bool _hasLoadedOnce = false;
+    private string _errorMessage = string.Empty;
+    private DateTime? _lastChecked;
+
+    // Auto-refresh
+    private bool _autoRefreshEnabled = false;
+    private int _refreshIntervalSeconds = 60;
+    private int _secondsUntilRefresh = 60;
+    private System.Threading.Timer? _refreshTimer;
+    private System.Threading.Timer? _countdownTimer;
+
+    // Data
+    private List<EndpointInfo> _endpoints = new();
+    private Dictionary<string, List<EndpointInfo>> _endpointsByCategory = new();
+    private Dictionary<string, EndpointTestResult> _endpointResults = new();
+    private readonly string[] _httpMethods = { "GET", "POST", "PUT", "DELETE" };
+
+    // Summary Stats
+    private int _totalEndpoints = 0;
+    private int _healthyCount = 0;
+    private int _warningCount = 0;
+    private int _errorCount = 0;
+    private int _untestedCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEndpointsAsync();
+    }
+
+    private void OnAutoRefreshToggled(bool enabled)
+    {
+        _autoRefreshEnabled = enabled;
+        UpdateAutoRefreshTimer();
+    }
+
+    private void OnRefreshIntervalChanged(int interval)
+    {
+        _refreshIntervalSeconds = interval;
+        if (_autoRefreshEnabled)
+        {
+            UpdateAutoRefreshTimer();
+        }
+    }
+
+    private async Task LoadEndpointsAsync()
+    {
+        try
+        {
+            var result = await EndpointTestingService.GetAvailableEndpointsAsync();
+
+            if (result.IsSuccess && result.Value != null)
+            {
+                _endpoints = result.Value;
+                _totalEndpoints = _endpoints.Count;
+
+                // Group by category with ordering
+                _endpointsByCategory = _endpoints
+                    .GroupBy(e => string.IsNullOrEmpty(e.Category) ? "Other" : e.Category)
+                    .OrderBy(g => GetCategoryOrder(g.Key))
+                    .ThenBy(g => g.Key)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(e => e.Path).ToList());
+
+                Logger.LogInformation("Loaded {Count} endpoints for health matrix", _endpoints.Count);
+            }
+            else
+            {
+                _errorMessage = result.Message ?? "Failed to load endpoints";
+                Logger.LogError("Failed to load endpoints: {Error}", _errorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading endpoints");
+            _errorMessage = $"Error loading endpoints: {ex.Message}";
+        }
+
+        await LoadHealthStatusAsync();
+    }
+
+    private async Task LoadHealthStatusAsync()
+    {
+        try
+        {
+            var statusResult = await EndpointTestingService.GetEndpointStatusAsync();
+
+            if (statusResult.IsSuccess && statusResult.Value != null)
+            {
+                _endpointResults = statusResult.Value;
+                UpdateSummaryStats();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load endpoint status");
+        }
+    }
+
+    private async Task RefreshHealthDataAsync()
+    {
+        _isLoading = true;
+        _errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            // Test all GET endpoints (lightweight health check)
+            var testableEndpoints = _endpoints
+                .Where(e => e.Method.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                .Take(50) // Limit to prevent long waits
+                .ToList();
+
+            var tasks = testableEndpoints.Select(async endpoint =>
+            {
+                try
+                {
+                    var result = await EndpointTestingService.TestEndpointAsync(endpoint);
+                    if (result.IsSuccess && result.Value != null)
+                    {
+                        return (endpoint.Id, result.Value);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Error testing endpoint {Endpoint}", endpoint.Path);
+                }
+                return (endpoint.Id, (EndpointTestResult?)null);
+            });
+
+            var results = await Task.WhenAll(tasks);
+
+            foreach (var (id, result) in results)
+            {
+                if (result != null)
+                {
+                    _endpointResults[id] = result;
+                }
+            }
+
+            _lastChecked = DateTime.Now;
+            _hasLoadedOnce = true;
+            UpdateSummaryStats();
+
+            Logger.LogInformation("Health matrix refreshed: {Tested} endpoints tested", results.Count(r => r.Item2 != null));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing health data");
+            _errorMessage = $"Error refreshing health data: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateSummaryStats()
+    {
+        _healthyCount = 0;
+        _warningCount = 0;
+        _errorCount = 0;
+        _untestedCount = 0;
+
+        foreach (var endpoint in _endpoints)
+        {
+            var status = GetEndpointHealthStatus(endpoint);
+            switch (status)
+            {
+                case HealthStatus.Healthy:
+                    _healthyCount++;
+                    break;
+                case HealthStatus.Warning:
+                    _warningCount++;
+                    break;
+                case HealthStatus.Error:
+                    _errorCount++;
+                    break;
+                case HealthStatus.Untested:
+                    _untestedCount++;
+                    break;
+            }
+        }
+    }
+
+    private List<EndpointInfo> GetEndpointsForCell(string category, string method)
+    {
+        if (!_endpointsByCategory.TryGetValue(category, out var categoryEndpoints))
+            return new List<EndpointInfo>();
+
+        return categoryEndpoints
+            .Where(e => e.Method.Method.Equals(method, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private HealthStatus GetEndpointHealthStatus(EndpointInfo endpoint)
+    {
+        if (!_endpointResults.TryGetValue(endpoint.Id, out var result))
+            return HealthStatus.Untested;
+
+        var statusCode = (int)result.StatusCode;
+
+        // Error: 4xx, 5xx, or connection failures
+        if (statusCode >= 400 || !result.Success)
+            return HealthStatus.Error;
+
+        // Warning: 3xx redirects or slow responses (>3 seconds)
+        if (statusCode >= 300 || result.ResponseTimeMs > 3000 || result.IsSlowResponse)
+            return HealthStatus.Warning;
+
+        // Healthy: 2xx responses with good performance
+        return HealthStatus.Healthy;
+    }
+
+    private string GetHealthClass(HealthStatus status) => status switch
+    {
+        HealthStatus.Healthy => "health-healthy",
+        HealthStatus.Warning => "health-warning",
+        HealthStatus.Error => "health-error",
+        _ => "health-untested"
+    };
+
+    private static Color GetMethodColor(string method) => method.ToUpper() switch
+    {
+        "GET" => Color.Success,
+        "POST" => Color.Primary,
+        "PUT" => Color.Warning,
+        "DELETE" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static int GetCategoryOrder(string category) => category switch
+    {
+        "Stock Transactions" => 1,
+        "Sales Transactions" => 2,
+        "Purchasing Transactions" => 3,
+        "Configuration" => 4,
+        "Object Master Data" => 5,
+        "External/SAP Integration" => 6,
+        _ => 99
+    };
+
+    private void NavigateToEndpoint(EndpointInfo endpoint)
+    {
+        // Navigate to Endpoint Browser with the selected endpoint
+        Navigation.NavigateTo($"/testing?endpoint={Uri.EscapeDataString(endpoint.Path)}&method={endpoint.Method.Method}");
+    }
+
+    private string GetSummaryCardStyle(string type) => type switch
+    {
+        "healthy" when _healthyCount > 0 => "border-left: 3px solid #28BD98;",
+        "warning" when _warningCount > 0 => "border-left: 3px solid #F59E0B;",
+        "error" when _errorCount > 0 => "border-left: 3px solid #EF5350;",
+        "total" => "border-left: 3px solid var(--mud-palette-primary);",
+        _ => ""
+    };
+
+    private static string TruncateCategory(string category)
+    {
+        if (category.Length <= 12)
+            return category;
+
+        // Try to abbreviate common patterns
+        return category
+            .Replace("Transactions", "Trans.")
+            .Replace("Configuration", "Config.")
+            .Replace("Master Data", "MD")
+            .Replace("External/SAP Integration", "SAP/Ext.");
+    }
+
+    private static string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
+            return text;
+
+        return text.Substring(0, maxLength) + "...";
+    }
+
+    private void UpdateAutoRefreshTimer()
+    {
+        _refreshTimer?.Dispose();
+        _countdownTimer?.Dispose();
+
+        if (_autoRefreshEnabled)
+        {
+            _secondsUntilRefresh = _refreshIntervalSeconds;
+
+            // Main refresh timer
+            _refreshTimer = new System.Threading.Timer(async _ =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshHealthDataAsync();
+                    _secondsUntilRefresh = _refreshIntervalSeconds;
+                    StateHasChanged();
+                });
+            }, null, TimeSpan.FromSeconds(_refreshIntervalSeconds), TimeSpan.FromSeconds(_refreshIntervalSeconds));
+
+            // Countdown timer (updates every second)
+            _countdownTimer = new System.Threading.Timer(_ =>
+            {
+                InvokeAsync(() =>
+                {
+                    if (_secondsUntilRefresh > 0)
+                        _secondsUntilRefresh--;
+                    StateHasChanged();
+                });
+            }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        _countdownTimer?.Dispose();
+    }
+
+    private enum HealthStatus
+    {
+        Healthy,
+        Warning,
+        Error,
+        Untested
+    }
+}

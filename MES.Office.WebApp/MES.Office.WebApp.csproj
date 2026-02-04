@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Configurations>Debug;Release;Development;Test</Configurations>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Blazor UI Framework -->
+    <PackageReference Include="MudBlazor" Version="8.15.0" />
+
+    <!-- Logging -->
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+
+    <!-- HTTP Client (for API communication) -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- API Client for seeding via API endpoints -->
+    <ProjectReference Include="..\MES.Office.ApiClient\MES.Office.ApiClient.csproj" />
+    <!-- Application layer includes DataSeeding framework with API-based seeding -->
+    <ProjectReference Include="..\MES.Office.Application\MES.Office.Application.csproj" />
+    <!-- Contracts for DTOs -->
+    <ProjectReference Include="..\MES.Office.WebAPI.Contracts\MES.Office.WebAPI.Contracts.csproj" />
+    <!-- Domain for common types -->
+    <ProjectReference Include="..\MES.Office.Domain\MES.Office.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="appsettings*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

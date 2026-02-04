@@ -1,0 +1,17 @@
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.ApiClient.deps.json
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.ApiClient.dll
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.ApiClient.pdb
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.WebAPI.Contracts.dll
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.WebAPI.Contracts.pdb
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\bin\Release\net10.0\MES.Office.WebAPI.Contracts.xml
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.csproj.AssemblyReference.cache
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.GeneratedMSBuildEditorConfig.editorconfig
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.AssemblyInfoInputs.cache
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.AssemblyInfo.cs
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.csproj.CoreCompileInputs.cache
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.sourcelink.json
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Offi.EB09CE6A.Up2Date
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.dll
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\refint\MES.Office.ApiClient.dll
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\MES.Office.ApiClient.pdb
+D:\Github\RCurran112\API\MES.Office.API\MES.Office.ApiClient\obj\Release\net10.0\ref\MES.Office.ApiClient.dll

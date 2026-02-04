@@ -1,0 +1,46 @@
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using MES.Office.WebApp
+@using MES.Office.WebApp.Components
+@using MES.Office.WebApp.Components.Layout
+@using MES.Office.WebApp.Components.Pages.Dashboard
+@using MES.Office.WebApp.Components.Pages.Seeding
+@using MES.Office.WebAPI.Contracts.DTOs
+@using MES.Office.WebAPI.Contracts.DTOs.Transactions.Stock
+@using MES.Office.WebAPI.Contracts.DTOs.Transactions.Sales
+@using MES.Office.WebAPI.Contracts.DTOs.Transactions.Purchasing
+@using MES.Office.WebAPI.Contracts.DTOs.Objects
+@using MES.Office.WebAPI.Contracts.Common
+@using MES.Office.WebAPI.Contracts.Enums
+@using MES.Office.WebAPI.Contracts.Models
+@using MudBlazor
+
+@* ApiClient Interfaces *@
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Configuration
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Common
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Logistics
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Organization
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Production
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Purchasing
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Sales
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Objects.Stock
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Transactions.Purchasing
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Transactions.Sales
+@using MES.Office.WebAPI.Contracts.Interfaces.v1.ApiClients.Transactions.Stock
+
+@* Testing DTOs *@
+@using MES.Office.WebAPI.Contracts.DTOs.WebApp.Testing
+
+@* Application Services *@
+@using MES.Office.Application.Interfaces.Services
+@using MES.Office.Application.Interfaces.DataSeeding
+@using MES.Office.Application.Interfaces.Infrastructure
+
+@* WebApp Services *@
+@using MES.Office.WebApp.Services
